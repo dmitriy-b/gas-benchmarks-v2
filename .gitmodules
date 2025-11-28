@@ -1,0 +1,3 @@
+[submodule "gas-benchmarks"]
+	path = gas-benchmarks
+	url = https://github.com/NethermindEth/gas-benchmarks

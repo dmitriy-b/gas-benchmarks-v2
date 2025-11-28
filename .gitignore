@@ -57,4 +57,9 @@ Thumbs.db
 *.bak
 inventory/hosts.yml
 .history/*
-gas-benchmarks/*
+# Note: gas-benchmarks is a git submodule - .gitmodules tracks the reference
+# We ignore execution-data directories inside it
+src/nethermind/*
+src/execution-data/*
+*.log
+*/execution-data/*
