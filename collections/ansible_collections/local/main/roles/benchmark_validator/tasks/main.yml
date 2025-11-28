@@ -1,0 +1,243 @@
+---
+# Role: benchmark_validator
+# Description: Validates prerequisites and configuration before benchmark execution
+
+- name: Validate Docker is installed
+  ansible.builtin.command: docker --version
+  register: docker_version_result
+  changed_when: false
+  failed_when: docker_version_result.rc != 0
+
+- name: Parse Docker version
+  ansible.builtin.set_fact:
+    docker_version: "{{ docker_version_result.stdout | regex_search('([0-9]+\\.[0-9]+)', '\\1') | first }}"
+
+- name: Fail if Docker version is too old
+  ansible.builtin.fail:
+    msg: "Docker not installed or version too old (found: {{ docker_version }}, required: >= 20.10)"
+  when: docker_version is version('20.10', '<')
+
+- name: Validate Docker Compose is installed
+  ansible.builtin.command: docker compose version
+  register: docker_compose_version_result
+  changed_when: false
+  failed_when: docker_compose_version_result.rc != 0
+
+- name: Parse Docker Compose version
+  ansible.builtin.set_fact:
+    docker_compose_version: "{{ docker_compose_version_result.stdout | regex_search('v?([0-9]+\\.[0-9]+)', '\\1') | first }}"
+
+- name: Fail if Docker Compose version is too old
+  ansible.builtin.fail:
+    msg: "Docker Compose not installed or version too old (found: {{ docker_compose_version }}, required: >= 2.0)"
+  when: docker_compose_version is version('2.0', '<')
+
+- name: Validate Docker daemon is running
+  ansible.builtin.command: docker ps
+  register: docker_ps_result
+  changed_when: false
+  failed_when: docker_ps_result.rc != 0
+
+- name: Fail if Docker daemon is not running
+  ansible.builtin.fail:
+    msg: "Docker daemon not running or permission denied"
+  when: docker_ps_result.rc != 0
+
+- name: Validate Python is installed
+  ansible.builtin.command: python3 --version
+  register: python_version_result
+  changed_when: false
+  failed_when: python_version_result.rc != 0
+
+- name: Parse Python version
+  ansible.builtin.set_fact:
+    python_version: "{{ python_version_result.stdout | regex_search('([0-9]+\\.[0-9]+)', '\\1') | first }}"
+
+- name: Fail if Python version is too old
+  ansible.builtin.fail:
+    msg: "Python 3.10+ not installed (found: {{ python_version }})"
+  when: python_version is version('3.10', '<')
+
+- name: Validate jq is installed
+  ansible.builtin.command: jq --version
+  register: jq_version_result
+  changed_when: false
+  failed_when: jq_version_result.rc != 0
+
+- name: Fail if jq is not installed
+  ansible.builtin.fail:
+    msg: "jq not installed (required for JSON processing)"
+  when: jq_version_result.rc != 0
+
+- name: Check available disk space
+  ansible.builtin.shell: |
+    df -BG {{ playbook_dir }} | tail -1 | awk '{print $4}' | sed 's/G//'
+  register: disk_space_result
+  changed_when: false
+  failed_when: false
+
+- name: Warn if disk space is low
+  ansible.builtin.debug:
+    msg: "WARNING: Low disk space detected ({{ disk_space_result.stdout }}G available). Benchmarks may require 10G+ for results and logs."
+  when: disk_space_result.stdout | int < 10
+
+- name: Fail if disk space is critically low
+  ansible.builtin.fail:
+    msg: "Insufficient disk space ({{ disk_space_result.stdout }}G available, minimum 5G required)"
+  when: disk_space_result.stdout | int < 5
+
+- name: Validate src/run.sh exists and is executable
+  ansible.builtin.stat:
+    path: "{{ playbook_dir }}/src/run.sh"
+  register: run_sh_stat
+
+- name: Fail if src/run.sh not found
+  ansible.builtin.fail:
+    msg: "src/run.sh not found (did you run file reorganization?)"
+  when: not run_sh_stat.stat.exists
+
+- name: Fail if src/run.sh is not executable
+  ansible.builtin.fail:
+    msg: "src/run.sh exists but is not executable"
+  when: run_sh_stat.stat.exists and not run_sh_stat.stat.executable
+
+- name: Validate src/setup_node.py exists
+  ansible.builtin.stat:
+    path: "{{ playbook_dir }}/src/setup_node.py"
+  register: setup_node_stat
+
+- name: Fail if src/setup_node.py not found
+  ansible.builtin.fail:
+    msg: "src/setup_node.py not found"
+  when: not setup_node_stat.stat.exists
+
+- name: Validate src/requirements.txt exists
+  ansible.builtin.stat:
+    path: "{{ playbook_dir }}/src/requirements.txt"
+  register: requirements_stat
+
+- name: Fail if src/requirements.txt not found
+  ansible.builtin.fail:
+    msg: "src/requirements.txt not found"
+  when: not requirements_stat.stat.exists
+
+- name: Validate client directories exist
+  ansible.builtin.stat:
+    path: "{{ playbook_dir }}/src/scripts/{{ item }}"
+  register: client_dir_stats
+  loop: "{{ benchmark_clients }}"
+  failed_when: not client_dir_stats.stat.exists
+
+- name: Fail if client directory not found
+  ansible.builtin.fail:
+    msg: "Client directory not found: src/scripts/{{ item.item }}"
+  when: not item.stat.exists
+  loop: "{{ client_dir_stats.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Validate client docker-compose.yaml exists
+  ansible.builtin.stat:
+    path: "{{ playbook_dir }}/src/scripts/{{ item }}/docker-compose.yaml"
+  register: docker_compose_stats
+  loop: "{{ benchmark_clients }}"
+
+- name: Fail if docker-compose.yaml not found for client
+  ansible.builtin.fail:
+    msg: "docker-compose.yaml not found for client {{ item.item }}"
+  when: not item.stat.exists
+  loop: "{{ docker_compose_stats.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Validate test paths exist
+  ansible.builtin.stat:
+    path: "{{ playbook_dir }}/{{ item.path }}"
+  register: test_path_stats
+  loop: "{{ benchmark_test_paths }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Fail if test path not found
+  ansible.builtin.fail:
+    msg: "Test path not found: {{ item.item.path }}"
+  when: not item.stat.exists
+  loop: "{{ test_path_stats.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+
+- name: Validate warmup file exists (if specified)
+  ansible.builtin.stat:
+    path: "{{ playbook_dir }}/{{ benchmark_warmup_file }}"
+  register: warmup_file_stat
+  when: benchmark_warmup_file is defined and benchmark_warmup_file != ""
+
+- name: Fail if warmup file not found
+  ansible.builtin.fail:
+    msg: "Warmup file not found: {{ benchmark_warmup_file }}"
+  when:
+    - benchmark_warmup_file is defined
+    - benchmark_warmup_file != ""
+    - not warmup_file_stat.stat.exists
+
+- name: Determine genesis file paths for each client and test
+  ansible.builtin.set_fact:
+    genesis_validations: []
+
+- name: Build genesis file validation list
+  ansible.builtin.set_fact:
+    genesis_validations: "{{ genesis_validations + [{'client': item.0, 'test': item.1, 'path': playbook_dir + '/src/scripts/genesisfiles/' + item.0 + '/' + item.1.genesis}] }}"
+  loop: "{{ benchmark_clients | product(benchmark_test_paths | selectattr('genesis', 'defined')) | list }}"
+  loop_control:
+    label: "{{ item.0 }} - {{ item.1.path }}"
+  when: item.1.genesis is defined
+
+- name: Validate genesis files exist
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  register: genesis_file_stats
+  loop: "{{ genesis_validations }}"
+  loop_control:
+    label: "{{ item.client }}/{{ item.test.genesis }}"
+  when: genesis_validations | length > 0
+
+- name: Fail if genesis file not found
+  ansible.builtin.fail:
+    msg: "Genesis file not found: {{ item.item.test.genesis }} for client {{ item.item.client }}"
+  when:
+    - genesis_validations | length > 0
+    - not item.stat.exists
+  loop: "{{ genesis_file_stats.results }}"
+  loop_control:
+    label: "{{ item.item.client }}/{{ item.item.test.genesis }}"
+
+- name: Install Python dependencies
+  ansible.builtin.pip:
+    requirements: "{{ playbook_dir }}/src/requirements.txt"
+    state: present
+    extra_args: --user
+  register: pip_install_result
+
+- name: Check if Makefile exists in src/
+  ansible.builtin.stat:
+    path: "{{ playbook_dir }}/src/Makefile"
+  register: makefile_stat
+
+- name: Prepare tools via Makefile (if exists)
+  ansible.builtin.command:
+    cmd: make prepare_tools
+    chdir: "{{ playbook_dir }}/src"
+  register: make_prepare_result
+  changed_when: "'up to date' not in make_prepare_result.stdout"
+  when: makefile_stat.stat.exists
+
+- name: Register validation results
+  ansible.builtin.set_fact:
+    validation_results:
+      docker_version: "{{ docker_version }}"
+      docker_compose_version: "{{ docker_compose_version }}"
+      python_version: "{{ python_version }}"
+      clients_validated: "{{ benchmark_clients }}"
+      test_paths_validated: "{{ benchmark_test_paths | map(attribute='path') | list }}"
+      warmup_file_validated: "{{ (benchmark_warmup_file is defined and benchmark_warmup_file != '' and warmup_file_stat.stat.exists) | default(false) }}"
+      genesis_files_validated: "{{ genesis_validations | map(attribute='path') | list }}"

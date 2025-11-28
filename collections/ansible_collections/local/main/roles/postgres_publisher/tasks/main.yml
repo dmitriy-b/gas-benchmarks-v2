@@ -1,0 +1,125 @@
+---
+# Role: postgres_publisher
+# Description: Publishes benchmark results to PostgreSQL database (optional, tag-based)
+
+- name: Check if postgres tag is enabled
+  ansible.builtin.meta: noop
+  tags:
+    - postgres
+
+- name: Execute PostgreSQL publication tasks
+  tags:
+    - postgres
+  block:
+    - name: Validate postgres credentials are provided
+      ansible.builtin.assert:
+        that:
+          - postgres_host is defined
+          - postgres_host != ""
+          - postgres_user is defined
+          - postgres_user != ""
+          - postgres_password is defined
+          - postgres_password != ""
+        fail_msg: "PostgreSQL credentials required when --tags postgres is used. Provide via variables or environment: DB_HOST, DB_USER, DB_PASSWORD"
+        success_msg: "PostgreSQL credentials validated"
+
+    - name: Check if results directory exists
+      ansible.builtin.stat:
+        path: "{{ playbook_dir }}/{{ benchmark_results_dir }}"
+      register: results_dir_stat
+
+    - name: Skip ingestion if results directory does not exist
+      ansible.builtin.debug:
+        msg: "Results directory {{ benchmark_results_dir }} does not exist. Skipping PostgreSQL ingestion."
+      when: not results_dir_stat.stat.exists
+
+    - name: Find CSV files in results directory
+      ansible.builtin.find:
+        paths: "{{ playbook_dir }}/{{ benchmark_results_dir }}"
+        patterns: "*.csv"
+      register: csv_files
+      when: results_dir_stat.stat.exists
+
+    - name: Skip ingestion if no CSV files found
+      ansible.builtin.debug:
+        msg: "No CSV files found in {{ benchmark_results_dir }}. Skipping PostgreSQL ingestion."
+      when:
+        - results_dir_stat.stat.exists
+        - csv_files.matched == 0
+
+    - name: Proceed with PostgreSQL ingestion
+      when:
+        - results_dir_stat.stat.exists
+        - csv_files.matched > 0
+      block:
+        - name: Test PostgreSQL connection
+          ansible.builtin.shell: |
+            python3 -c "
+            import psycopg2
+            import sys
+
+            try:
+                conn = psycopg2.connect(
+                    host='{{ postgres_host }}',
+                    port={{ postgres_port }},
+                    user='{{ postgres_user }}',
+                    password='{{ postgres_password }}',
+                    database='{{ postgres_database }}',
+                    connect_timeout={{ postgres_timeout }}
+                )
+                conn.close()
+                print('Connection successful')
+                sys.exit(0)
+            except Exception as e:
+                print(f'Connection failed: {e}', file=sys.stderr)
+                sys.exit(1)
+            "
+          args:
+            executable: /bin/bash
+          register: pg_connection_test
+          changed_when: false
+          no_log: true
+          failed_when: false
+
+        - name: Log connection failure and skip ingestion
+          ansible.builtin.debug:
+            msg: "PostgreSQL database unreachable at {{ postgres_host }}:{{ postgres_port }}. Skipping ingestion."
+          when: pg_connection_test.rc != 0
+
+        - name: Ingest results to PostgreSQL
+          ansible.builtin.shell: |
+            python3 src/fill_postgres_db.py \
+              --db-host "{{ postgres_host }}" \
+              --db-port "{{ postgres_port }}" \
+              --db-user "{{ postgres_user }}" \
+              --db-name "{{ postgres_database }}" \
+              --table-name "{{ postgres_table }}" \
+              --db-password "{{ postgres_password }}" \
+              --reports-dir "{{ benchmark_results_dir }}"
+          args:
+            chdir: "{{ playbook_dir }}"
+            executable: /bin/bash
+          register: ingestion_result
+          no_log: true
+          changed_when: ingestion_result.rc == 0
+          failed_when: false
+          when: pg_connection_test.rc == 0
+
+        - name: Log ingestion success
+          ansible.builtin.debug:
+            msg: "Successfully ingested results to {{ postgres_host }}/{{ postgres_database }}.{{ postgres_table }}"
+          when:
+            - pg_connection_test.rc == 0
+            - ingestion_result.rc == 0
+
+        - name: Log ingestion failure
+          ansible.builtin.debug:
+            msg: "Failed to ingest results to PostgreSQL: {{ ingestion_result.stderr }}"
+          when:
+            - pg_connection_test.rc == 0
+            - ingestion_result.rc != 0
+
+  rescue:
+    - name: Handle PostgreSQL publication errors
+      ansible.builtin.debug:
+        msg: "PostgreSQL publication encountered an error but will not fail the playbook: {{ ansible_failed_result.msg | default('Unknown error') }}"

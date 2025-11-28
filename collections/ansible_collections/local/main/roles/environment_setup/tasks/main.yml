@@ -1,0 +1,111 @@
+---
+# Role: environment_setup
+# Description: Prepares environment for benchmark execution (directories, lock file, cleanup)
+
+- name: Check for existing lock file
+  ansible.builtin.stat:
+    path: "{{ benchmark_lock_file }}"
+  register: lock_file_stat
+
+- name: Read lock file content if exists
+  ansible.builtin.slurp:
+    path: "{{ benchmark_lock_file }}"
+  register: lock_file_content
+  when: lock_file_stat.stat.exists
+
+- name: Extract PID from lock file
+  ansible.builtin.set_fact:
+    lock_pid: "{{ (lock_file_content.content | b64decode | regex_search('pid: (\\d+)', '\\1'))[0] | default('0') }}"
+  when: lock_file_stat.stat.exists
+
+- name: Check if lock process is still running
+  ansible.builtin.shell: |
+    ps -p {{ lock_pid }} > /dev/null 2>&1 && echo "running" || echo "not_running"
+  register: lock_process_check
+  changed_when: false
+  failed_when: false
+  when: lock_file_stat.stat.exists
+
+- name: Remove stale lock file if process is dead
+  ansible.builtin.file:
+    path: "{{ benchmark_lock_file }}"
+    state: absent
+  when:
+    - lock_file_stat.stat.exists
+    - lock_process_check.stdout | default('') == 'not_running'
+
+- name: Update lock file stat after cleanup
+  ansible.builtin.stat:
+    path: "{{ benchmark_lock_file }}"
+  register: lock_file_stat
+  when: lock_process_check.stdout | default('') == 'not_running'
+
+- name: Fail if valid lock file exists (concurrent execution prevented)
+  ansible.builtin.fail:
+    msg: "Benchmark execution already in progress (lock file: {{ benchmark_lock_file }}, PID: {{ lock_pid }})"
+  when:
+    - lock_file_stat.stat.exists
+    - lock_process_check.stdout | default('running') == 'running'
+
+- name: Create lock file
+  ansible.builtin.copy:
+    content: |
+      timestamp: {{ ansible_date_time.iso8601 }}
+      pid: {{ ansible_pid }}
+      playbook_run_id: {{ ansible_run_tags | join(',') | default('no_tags') }}
+    dest: "{{ benchmark_lock_file }}"
+    mode: '0644'
+
+- name: Clean previous results directories
+  ansible.builtin.file:
+    path: "{{ playbook_dir }}/{{ item }}"
+    state: absent
+  loop:
+    - "{{ benchmark_results_dir }}"
+    - "{{ benchmark_preparation_results_dir }}"
+
+- name: Create required directories
+  ansible.builtin.file:
+    path: "{{ playbook_dir }}/{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "{{ benchmark_results_dir }}"
+    - "{{ benchmark_warmup_results_dir }}"
+    - "{{ benchmark_logs_dir }}"
+    - "{{ benchmark_preparation_results_dir }}"
+
+- name: Check if overlay snapshot mode is enabled
+  ansible.builtin.set_fact:
+    overlay_mode_enabled: "{{ benchmark_snapshot_root is defined and benchmark_snapshot_root != '' }}"
+
+- name: Clean up stale overlay mounts (if using overlays)
+  ansible.builtin.shell: |
+    set -e
+
+    # Find all overlay mounts under the overlay runtime directory
+    overlay_runtime_path="{{ playbook_dir }}/{{ benchmark_overlay_tmp_root }}"
+
+    if [ -d "$overlay_runtime_path" ]; then
+      # Find and unmount all overlay filesystems
+      find "$overlay_runtime_path" -type d -name "overlay" 2>/dev/null | while read mount_point; do
+        if mountpoint -q "$mount_point" 2>/dev/null; then
+          echo "Unmounting stale overlay: $mount_point"
+          sudo umount "$mount_point" 2>/dev/null || {
+            echo "Failed to unmount $mount_point, attempting lazy unmount"
+            sudo umount -l "$mount_point" 2>/dev/null || true
+          }
+        fi
+      done
+
+      # Clean up the overlay runtime directory
+      rm -rf "$overlay_runtime_path"
+    fi
+
+    echo "Overlay cleanup completed"
+  args:
+    executable: /bin/bash
+  when: overlay_mode_enabled
+  register: overlay_cleanup_result
+  changed_when: "'Unmounting' in overlay_cleanup_result.stdout"
+  failed_when: false

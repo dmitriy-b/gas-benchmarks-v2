@@ -1,0 +1,117 @@
+---
+- name: Ansible Benchmark Orchestration
+  hosts: localhost
+  gather_facts: yes
+
+  vars:
+    client_failures: []
+    playbook_start_time: "{{ ansible_date_time.epoch }}"
+
+  tasks:
+    - name: Record playbook start time
+      ansible.builtin.set_fact:
+        playbook_start_time: "{{ ansible_date_time.epoch }}"
+      tags: ['always']
+    # Phase 1: Environment Setup
+    - name: Environment setup
+      ansible.builtin.include_role:
+        name: environment_setup
+      tags: ['always']
+
+    # Phase 2: Validation
+    - name: Validate prerequisites
+      ansible.builtin.include_role:
+        name: benchmark_validator
+      tags: ['always']
+
+    # Phase 3: Benchmark Execution (sequential, per client)
+    - name: Run benchmarks for each client
+      block:
+        - name: Execute benchmarks for client
+          ansible.builtin.include_role:
+            name: benchmark_runner
+          vars:
+            current_client: "{{ item }}"
+          loop: "{{ benchmark_clients }}"
+          loop_control:
+            loop_var: item
+          register: benchmark_results
+          ignore_errors: yes
+
+        - name: Track failed clients
+          ansible.builtin.set_fact:
+            client_failures: "{{ client_failures + [item.item] }}"
+          loop: "{{ benchmark_results.results | default([]) }}"
+          loop_control:
+            loop_var: item
+          when: item.failed | default(false)
+          no_log: true
+
+      tags: ['benchmarks']
+
+    # Phase 4: PostgreSQL Ingestion (optional, tag-based)
+    - name: Publish results to PostgreSQL
+      ansible.builtin.include_role:
+        name: postgres_publisher
+      tags: ['postgres']
+      when: postgres_host | default('') != ''
+
+  post_tasks:
+    # Phase 5: Cleanup and Final Status
+    - name: Calculate execution time
+      ansible.builtin.set_fact:
+        playbook_end_time: "{{ ansible_date_time.epoch }}"
+        execution_duration: "{{ (ansible_date_time.epoch | int) - (playbook_start_time | int) }}"
+      tags: ['always']
+
+    - name: Report execution summary with timing
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          BENCHMARK EXECUTION SUMMARY
+          ========================================
+          Total clients: {{ benchmark_clients | length }}
+          Successful clients: {{ benchmark_clients | length - client_failures | length }}
+          Failed clients: {{ client_failures | length }}
+          {% if client_failures | length > 0 %}
+          Failed: {{ client_failures | join(', ') }}
+          {% endif %}
+
+          Execution Duration: {{ execution_duration | int // 60 }} minutes {{ execution_duration | int % 60 }} seconds
+          Start Time: {{ '%Y-%m-%d %H:%M:%S' | strftime(playbook_start_time | int) }}
+          End Time: {{ '%Y-%m-%d %H:%M:%S' | strftime(playbook_end_time | int) }}
+          ========================================
+      tags: ['always']
+
+    - name: Cleanup tasks (always run)
+      block:
+        - name: Remove lock file
+          ansible.builtin.file:
+            path: "{{ benchmark_lock_file | default('/tmp/gas_benchmark.lock') }}"
+            state: absent
+
+        - name: Clean up overlay mounts
+          ansible.builtin.shell: |
+            # Find and unmount all overlay mounts under overlay-runtime
+            if [ -d overlay-runtime ]; then
+              for mount in $(mount | grep overlay-runtime | awk '{print $3}'); do
+                umount -l "$mount" 2>/dev/null || true
+              done
+              # Remove overlay-runtime directory
+              rm -rf overlay-runtime
+            fi
+          args:
+            executable: /bin/bash
+          when: benchmark_snapshot_root | default('') != ''
+          ignore_errors: yes
+      always:
+        - name: Ensure cleanup completion
+          ansible.builtin.debug:
+            msg: "Cleanup tasks completed"
+      tags: ['always']
+
+    - name: Fail playbook if any client failed
+      ansible.builtin.fail:
+        msg: "One or more clients failed during benchmark execution: {{ client_failures | join(', ') }}"
+      when: client_failures | length > 0
+      tags: ['always']

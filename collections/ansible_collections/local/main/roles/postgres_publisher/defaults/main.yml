@@ -1,0 +1,14 @@
+---
+# Role: postgres_publisher
+# Purpose: Default variables for PostgreSQL ingestion
+
+# PostgreSQL configuration
+postgres_host: ""
+postgres_port: 5432
+postgres_user: ""
+postgres_password: ""
+postgres_database: "monitoring"
+postgres_table: "gas_limit_benchmarks"
+
+# Results directory
+reports_directory: "results"

@@ -1,11 +1,7 @@
 ---
-# Ansible Galaxy Collections
+# Ansible Galaxy requirements
 # Install with: ansible-galaxy collection install -r requirements.yml
 
-collections:
-  # Example: Include common collections
-  # - name: community.general
-  #   version: ">=7.0.0"
-  #
-  # - name: ansible.posix
-  #   version: ">=1.5.0"
+collections: []
+# No external Ansible collections required for this feature
+# Using only ansible.builtin modules
