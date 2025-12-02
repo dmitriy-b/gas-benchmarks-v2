@@ -129,7 +129,7 @@ sudo dnf install -y python3 python3-pip jq make git
 #### Step 2: Clone Repository
 
 ```bash
-git clone https://github.com/NethermindEth/gas-benchmarks-v2.git
+git clone https://github.com/dmitriy-b/gas-benchmarks-v2.git
 cd gas-benchmarks-v2
 ```
 
@@ -639,66 +639,6 @@ benchmark_images: {}
 
 **Priority**: CLI (`-e`) > `group_vars/all.yml` > Role defaults
 
-### Execution Control Parameters
-
-**Purpose**: Fine-tune benchmark execution behavior.
-
-#### benchmark_runs
-
-**Type**: Integer (default: `1`)
-
-**Purpose**: Number of test iterations for statistical averaging.
-
-**Example**:
-
-```bash
--e "benchmark_runs=5"
-```
-
-**Use Case**: Reduce variance in results by averaging multiple runs.
-
-#### benchmark_restart_before_testing
-
-**Type**: Boolean (default: `false`)
-
-**Purpose**: Restart the client container before executing tests.
-
-**Example**:
-
-```bash
--e "benchmark_restart_before_testing=true"
-```
-
-**Use Case**: Ensure clean client state for each benchmark run.
-
-#### benchmark_skip_forkchoice
-
-**Type**: Boolean (default: `false`)
-
-**Purpose**: Skip forkchoice update calls during benchmark execution.
-
-**Example**:
-
-```bash
--e "benchmark_skip_forkchoice=true"
-```
-
-**Use Case**: Test gas consumption without forkchoice overhead.
-
-#### benchmark_opcodes_warmup_count
-
-**Type**: Integer (default: `1`)
-
-**Purpose**: Number of warmup iterations before actual benchmarks.
-
-**Example**:
-
-```bash
--e "benchmark_opcodes_warmup_count=3"
-```
-
-**Use Case**: Pre-warm client caches before measuring performance.
-
 ### Custom Test Paths
 
 **Parameter**: `benchmark_test_paths` (list of test path objects)
@@ -748,96 +688,6 @@ benchmark_test_paths:
      -e "benchmark_clients=['nethermind']"
    ```
 
-### Warmup Mechanism
-
-**Parameter**: `benchmark_warmup_file` (string, default: empty)
-
-**Purpose**: Pre-warm client state with warmup tests before executing actual benchmarks.
-
-**Configuration**:
-
-```yaml
-benchmark_warmup_file: "gas-benchmarks/warmup-tests/warmup.json"
-```
-
-**CLI Override**:
-
-```bash
--e "benchmark_warmup_file='gas-benchmarks/warmup-tests/warmup.json'"
-```
-
-**How It Works**:
-
-1. Client container is deployed
-2. Warmup tests are executed (not included in results)
-3. Client state is now "warm" (caches populated)
-4. Actual benchmark tests are executed and measured
-5. Results reflect performance with warm caches
-
-**Difference from Actual Benchmarks**:
-
-- **Warmup Tests**: Pre-populate client caches, not measured
-- **Benchmark Tests**: Measured for gas consumption and performance
-
-**Use Case**: Measure steady-state performance rather than cold-start performance.
-
-**Example Warmup File** (gas-benchmarks/warmup-tests/warmup.json):
-
-```json
-{
-  "tests": [
-    {"name": "warmup_transfer", "gas": 21000},
-    {"name": "warmup_bn128", "gas": 150000}
-  ]
-}
-```
-
-### Snapshot-Based Testing
-
-**Parameters**:
-- `benchmark_snapshot_root`: Snapshot directory (string, default: empty)
-- `benchmark_network`: Network name (string, default: empty)
-
-**Purpose**: Use blockchain snapshots with overlay mounts for read-only testing.
-
-**How It Works**:
-
-1. Blockchain snapshot is stored in `benchmark_snapshot_root`
-2. Overlay filesystem is created in `overlay-runtime/` (temporary)
-3. Client reads from snapshot (base layer, read-only)
-4. Client writes to overlay (upper layer, writable, discarded after test)
-5. After benchmark, overlay is unmounted and deleted
-
-**Benefits**:
-- Preserve snapshot data (read-only base layer)
-- Test client behavior with real blockchain state
-- Fast cleanup (discard overlay without affecting snapshot)
-
-**Configuration** (in `group_vars/all.yml`):
-
-```yaml
-benchmark_network: "mainnet"
-benchmark_snapshot_root: "/mnt/snapshots/mainnet"
-```
-
-**CLI Example**:
-
-```bash
-ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchmarks.yml \
-  -i inventory/hosts.yml \
-  -e "benchmark_clients=['nethermind']" \
-  -e "benchmark_network='mainnet'" \
-  -e "benchmark_snapshot_root='/mnt/snapshots/mainnet'"
-```
-
-**Requirements**:
-- Snapshot directory must exist and contain client-compatible snapshot data
-- Sufficient disk space for overlay (temporary writes)
-- Linux kernel with overlay filesystem support
-
-**Cleanup**: Overlay mounts are automatically unmounted in the cleanup phase (Phase 5).
-
-**Troubleshooting**: See [Stale Overlay Mounts](#stale-overlay-mounts) in Debugging section.
 
 ### PostgreSQL Integration
 
@@ -858,35 +708,18 @@ ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchm
 
 #### Step 1: Create Database and Table
 
-Connect to your PostgreSQL server and execute:
+Use `gas-benchmarks/src/populate_postgres_db.py` to populate the database with the benchmark results.
 
-```sql
-CREATE DATABASE monitoring;
-
-\c monitoring
-
-CREATE TABLE gas_limit_benchmarks (
-    id SERIAL PRIMARY KEY,
-    client_name VARCHAR(50) NOT NULL,
-    test_name VARCHAR(500) NOT NULL,
-    gas_consumed BIGINT NOT NULL,
-    execution_time_ms INTEGER NOT NULL,
-    mgasps DECIMAL(10, 2),
-    timestamp TIMESTAMP NOT NULL,
-    status VARCHAR(20) NOT NULL
-);
-
--- Optional: Create indexes for query performance
-CREATE INDEX idx_client_name ON gas_limit_benchmarks(client_name);
-CREATE INDEX idx_test_name ON gas_limit_benchmarks(test_name);
-CREATE INDEX idx_timestamp ON gas_limit_benchmarks(timestamp);
+```bash
+python populate_postgres_db.py \
+    --reports-dir gas-benchmarks/reports \
+    --db-host db.example.com \
+    --db-port 5432 \
+    --db-user benchmark_user \
+    --db-password secret123 \
+    --db-name monitoring \
+    --db-table gas_limit_benchmarks
 ```
-
-**Schema Notes**:
-- `id`: Auto-incrementing primary key
-- `gas_consumed`: BIGINT to handle large gas values
-- `test_name`: VARCHAR(500) for long test identifiers
-- `mgasps`: Throughput metric (Mega-gas per second)
 
 #### Step 2: Configure Connection
 
@@ -926,53 +759,6 @@ ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchm
 
 **Without `--tags postgres`**: Benchmarks run normally, but metrics are not published to PostgreSQL.
 
-#### Step 4: Verify Data Ingestion
-
-```sql
-SELECT client_name, test_name, gas_consumed, timestamp
-FROM gas_limit_benchmarks
-ORDER BY timestamp DESC
-LIMIT 10;
-```
-
-**Expected Output**:
-
-```
- client_name |           test_name           | gas_consumed |      timestamp
--------------+-------------------------------+--------------+---------------------
- nethermind  | eest_tests/bn128_add_test     |       150000 | 2025-12-02 10:15:45
- nethermind  | eest_tests/bn128_mul_test     |       250000 | 2025-12-02 10:15:52
- nethermind  | eest_tests/bn128_pairing_test |      1200000 | 2025-12-02 10:16:27
-```
-
-#### Grafana Visualization (Example Queries)
-
-**Query 1: Gas Consumption by Client**
-
-```sql
-SELECT
-    client_name,
-    AVG(gas_consumed) AS avg_gas
-FROM gas_limit_benchmarks
-WHERE test_name = 'eest_tests/bn128_add_test'
-GROUP BY client_name
-ORDER BY avg_gas DESC;
-```
-
-**Query 2: Performance Over Time**
-
-```sql
-SELECT
-    DATE_TRUNC('day', timestamp) AS date,
-    client_name,
-    AVG(mgasps) AS avg_throughput
-FROM gas_limit_benchmarks
-WHERE test_name = 'eest_tests/bn128_add_test'
-GROUP BY date, client_name
-ORDER BY date DESC, client_name;
-```
-
-**Grafana Setup**: Configure Grafana with PostgreSQL data source using the same connection parameters. Create dashboards with the queries above.
 
 #### Failure Handling
 
@@ -1917,7 +1703,7 @@ make clean
 
 ### Reporting Issues
 
-**Benchmark Execution Issues**: [GitHub Issues](https://github.com/NethermindEth/gas-benchmarks-v2/issues)
+**Benchmark Execution Issues**: [GitHub Issues](https://github.com/dmitriy-b/gas-benchmarks-v2/issues)
 
 **Upstream Test Issues**: [gas-benchmarks Issues](https://github.com/NethermindEth/gas-benchmarks/issues)
 
@@ -1974,7 +1760,7 @@ Documentation contributions are welcome! To improve this README:
 
 ---
 
-**Repository**: [https://github.com/NethermindEth/gas-benchmarks-v2](https://github.com/NethermindEth/gas-benchmarks-v2)
+**Repository**: [https://github.com/dmitriy-b/gas-benchmarks-v2](https://github.com/dmitriy-b/gas-benchmarks-v2)
 
 **Upstream Test Repository**: [https://github.com/NethermindEth/gas-benchmarks](https://github.com/NethermindEth/gas-benchmarks)
 
