@@ -23,10 +23,7 @@ Ansible-orchestrated gas benchmark suite for Ethereum execution clients.
   - [Custom Docker Images](#custom-docker-images)
 - [Advanced Topics](#advanced-topics)
   - [Configuration Customization](#configuration-customization)
-  - [Execution Control Parameters](#execution-control-parameters)
   - [Custom Test Paths](#custom-test-paths)
-  - [Warmup Mechanism](#warmup-mechanism)
-  - [Snapshot-Based Testing](#snapshot-based-testing)
   - [PostgreSQL Integration](#postgresql-integration)
   - [Submodule Updates](#submodule-updates)
   - [Four-Phase Execution Model](#four-phase-execution-model)
@@ -326,28 +323,30 @@ Benchmark execution completed.
 
 ```bash
 # List result files
-ls -lh gas-benchmarks/results/
+ls -lh gas-benchmarks/reports/
 
 # Expected files:
-# nethermind_20251202_101530.csv
-# nethermind_20251202_101530.html
+# output_nethermind.csv
+# raw_results_nethermind.csv
+# index.html
 
 # View CSV in terminal
-cat gas-benchmarks/reports/*.csv
+cat gas-benchmarks/reports/output_*.csv
 
 # Open HTML report in browser
-open gas-benchmarks/reports/*.html  # macOS
-xdg-open gas-benchmarks/reports/*.html  # Linux
+open gas-benchmarks/reports/index.html  # macOS
+xdg-open gas-benchmarks/reports/index.html  # Linux
 ```
 
-**CSV Example**:
+**CSV Structure**:
 
-```csv
-client,test_name,gas_consumed,execution_time_ms,timestamp,status,mgasps
-nethermind,eest_tests/bn128_add_test,150000,4523,2025-12-02T10:15:45Z,pass,33.15
-nethermind,eest_tests/bn128_mul_test,250000,7234,2025-12-02T10:15:52Z,pass,34.56
-nethermind,eest_tests/bn128_pairing_test,1200000,35234,2025-12-02T10:16:27Z,pass,34.05
-```
+The CSV contains performance metrics with the following columns:
+- `Title`: Test name
+- `Max (MGas/s)`, `p50 (MGas/s)`, `p95 (MGas/s)`, `p99 (MGas/s)`, `Min (MGas/s)`: Performance percentiles
+- `N`: Number of runs
+- `Description`: Test description
+- `Start Time`, `End Time`, `Duration (ms)`: Timing information
+- `FCU time (ms)`, `NP time (ms)`: Forkchoice and newPayload timings
 
 ### Command Syntax
 
@@ -368,7 +367,6 @@ ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchm
 
 **Common Optional Parameters**:
 - `-e "benchmark_filter='pattern'"`: Test name pattern filter
-- `-e "benchmark_runs=N"`: Number of test iterations (default: 1)
 - `-e "benchmark_images={...}"`: Custom Docker image overrides
 - `--tags postgres`: Enable PostgreSQL ingestion phase
 
@@ -378,8 +376,7 @@ ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchm
 ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchmarks.yml \
   -i inventory/hosts.yml \
   -e "benchmark_clients=['nethermind','geth']" \
-  -e "benchmark_filter='bn128'" \
-  -e "benchmark_runs=3"
+  -e "benchmark_filter='bn128'"
 ```
 
 ### Single-Client Benchmarks
@@ -402,18 +399,6 @@ ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchm
   -i inventory/hosts.yml \
   -e "benchmark_clients=['geth']"
 ```
-
-**Example 3: Reth with Multiple Runs for Averaging**
-
-```bash
-ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchmarks.yml \
-  -i inventory/hosts.yml \
-  -e "benchmark_clients=['reth']" \
-  -e "benchmark_filter='modexp'" \
-  -e "benchmark_runs=5"
-```
-
-Results will show average gas consumption and execution time across 5 iterations.
 
 **Result Location**:
 
@@ -1640,7 +1625,6 @@ make clean
 |-----------|------|---------|
 | `benchmark_clients` | List | `['nethermind','geth']` |
 | `benchmark_filter` | String | `'bn128'` |
-| `benchmark_runs` | Integer | `5` |
 | `benchmark_images` | Dict | `{'nethermind': 'nethermind/nethermind:1.25.0'}` |
 | `postgres_host` | String | `'db.example.com'` |
 
