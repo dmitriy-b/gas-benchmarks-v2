@@ -26,7 +26,7 @@ Ansible-orchestrated gas benchmark suite for Ethereum execution clients.
   - [Custom Test Paths](#custom-test-paths)
   - [PostgreSQL Integration](#postgresql-integration)
   - [Submodule Updates](#submodule-updates)
-  - [Four-Phase Execution Model](#four-phase-execution-model)
+  - [Five-Phase Execution Model](#five-phase-execution-model)
 - [Debugging & Troubleshooting](#debugging--troubleshooting)
   - [Log Access](#log-access)
   - [Debugging Workflow](#debugging-workflow)
@@ -55,6 +55,7 @@ This section guides you through installing the gas-benchmarks-v2 system and runn
 | Docker | 20.10 | Container runtime for Ethereum clients |
 | Docker Compose | 2.0 | Container orchestration |
 | Python | 3.10 | Ansible runtime and benchmark scripts |
+| uv | Latest | Fast Python package installer (recommended) |
 | Ansible Core | 2.15 | Orchestration framework |
 | jq | 1.6 | JSON processing for results |
 | make | Any | Build automation |
@@ -77,7 +78,7 @@ This section guides you through installing the gas-benchmarks-v2 system and runn
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
 # Install required tools
-brew install python@3.10 jq make git
+brew install python@3.10 jq make git uv
 
 # Install Docker Desktop
 # Download from: https://www.docker.com/products/docker-desktop
@@ -103,6 +104,9 @@ sudo usermod -aG docker $USER
 # Install other tools
 sudo apt install -y python3 python3-pip python3-venv jq make git
 
+# Install uv (fast Python package installer)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
 # Logout and login for docker group changes to take effect
 ```
 
@@ -121,6 +125,9 @@ sudo usermod -aG docker $USER
 
 # Install other tools
 sudo dnf install -y python3 python3-pip jq make git
+
+# Install uv (fast Python package installer)
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 #### Step 2: Clone Repository
@@ -140,12 +147,15 @@ make install
 **Expected Output**:
 ```
 ==> Setting up Python environment...
+Using uv for dependency management...
 ==> Creating virtual environment at .venv...
 ==> Installing Ansible and dependencies...
 ==> Environment ready!
 
 To activate: source .venv/bin/activate
 ```
+
+**Note**: The `make install` command automatically uses `uv` if available (faster), otherwise falls back to `pip`.
 
 **Activate the virtual environment**:
 ```bash
@@ -186,7 +196,7 @@ Docker version 24.0.5, build ced0996
 Docker Compose version v2.20.2
 ==> Checking jq...
 jq-1.6
-==> Installing Python dependencies from src/requirements.txt...
+==> Installing Python dependencies from gas-benchmarks/requirements.txt...
 Requirement already satisfied: web3 in ./.venv/lib/python3.10/site-packages
 ✓ All tools prepared!
 ```
@@ -260,14 +270,14 @@ gas-benchmarks-v2/
    - Deploy Docker container with client software
    - Run warmup tests (if configured)
    - Execute benchmark tests (filtered if specified)
-   - Collect results to `results/` directory
+   - Collect results to `results/` / `gas-benchmarks/results` directory
 4. Optionally publish metrics to PostgreSQL
 5. Cleanup: Remove locks, unmount overlays
 
 **External Dependencies**:
 
 - **Upstream Repository**: [gas-benchmarks](https://github.com/NethermindEth/gas-benchmarks) - Test files and genesis configs
-- **Docker Hub**: Client images (e.g., `nethermind/nethermind`, `ethereum/client-go`)
+- **Docker Hub**: Client images (e.g., `ethpandaops/nethermind:performance`, `ethpandaops/geth:performance`)
 - **PostgreSQL** (optional): Metrics storage for Grafana visualization
 
 ---
@@ -292,7 +302,7 @@ ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchm
 **What This Does**:
 - Benchmarks the **Nethermind** client
 - Runs only tests matching **"bn128"** (BN128 precompile tests)
-- Generates CSV and HTML results in `results/` directory
+- Generates CSV and HTML results in `results/` / `gas-benchmarks/results` directory
 
 **Expected Execution Time**: 5-10 minutes (depending on hardware)
 
@@ -402,9 +412,9 @@ ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchm
 
 **Result Location**:
 
-- **CSV**: `results/{client}_{timestamp}.csv`
-- **HTML**: `results/{client}_{timestamp}.html`
-- **Logs**: `logs/{client}_{timestamp}.log`
+- **CSV**: `gas-benchmarks/reports/output_{client}.csv`
+- **HTML**: `gas-benchmarks/reports/index.html`
+- **Logs**: `gas-benchmarks/logs/{client}_{timestamp}.log`
 
 ### Multi-Client Comparative Benchmarks
 
@@ -420,17 +430,6 @@ ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchm
 ```
 
 **Execution Model**: Clients run **sequentially**, not in parallel.
-
-**Execution Flow**:
-
-1. Deploy Nethermind → Run tests → Collect results → Stop Nethermind
-2. Deploy Geth → Run tests → Collect results → Stop Geth
-3. Deploy Reth → Run tests → Collect results → Stop Reth
-
-**Why Sequential?**
-- Prevents resource contention (CPU, memory, disk I/O)
-- Ensures fair performance comparison
-- Simplifies debugging (one client at a time)
 
 **Failure Isolation**: If one client fails, the playbook continues testing remaining clients. Failed clients are reported in the execution summary.
 
@@ -538,7 +537,7 @@ Supported clients are defined in `gas-benchmarks/images.yaml`.
 ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchmarks.yml \
   -i inventory/hosts.yml \
   -e "benchmark_clients=['nethermind']" \
-  -e "benchmark_images={'nethermind': 'nethermind/nethermind:1.25.0'}"
+  -e "benchmark_images={'nethermind': 'ethpandaops/nethermind:1.25.0'}"
 ```
 
 **Example 2: Multiple Custom Images**
@@ -547,7 +546,7 @@ ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchm
 ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchmarks.yml \
   -i inventory/hosts.yml \
   -e "benchmark_clients=['nethermind','geth']" \
-  -e "benchmark_images={'nethermind': 'nethermind/nethermind:1.25.0', 'geth': 'ethereum/client-go:v1.13.0'}"
+  -e "benchmark_images={'nethermind': 'ethpandaops/nethermind:1.25.0', 'geth': 'ethpandaops/geth:v1.13.0'}"
 ```
 
 **Example 3: Private Registry**
@@ -616,8 +615,8 @@ benchmark_results_dir: "results"
 
 # Custom Docker images (optional)
 benchmark_images: {}
-  # nethermind: "nethermind/nethermind:1.25.0"
-  # geth: "ethereum/client-go:v1.13.0"
+  # nethermind: "ethpandaops/nethermind:1.25.0"
+  # geth: "ethpandaops/geth:v1.13.0"
 ```
 
 **CLI Overrides**: Parameters specified with `-e` flags override defaults in `group_vars/all.yml`.
@@ -693,17 +692,15 @@ benchmark_test_paths:
 
 #### Step 1: Create Database and Table
 
-Use `gas-benchmarks/src/populate_postgres_db.py` to populate the database with the benchmark results.
+Use `gas-benchmarks/generate_postgres_schema.py` to create the database table.
 
 ```bash
-python populate_postgres_db.py \
-    --reports-dir gas-benchmarks/reports \
+python gas-benchmarks/generate_postgres_schema.py \
     --db-host db.example.com \
     --db-port 5432 \
-    --db-user benchmark_user \
-    --db-password secret123 \
-    --db-name monitoring \
-    --db-table gas_limit_benchmarks
+    --db-user myuser \
+    --db-name benchmarks \
+    --table-name gas_benchmark_results
 ```
 
 #### Step 2: Configure Connection
@@ -757,7 +754,7 @@ ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchm
 **Common Ingestion Errors**:
 - **Authentication failure**: Check `DB_USER` and `DB_PASSWORD`
 - **Connection timeout**: Verify `DB_HOST` is reachable, check firewall rules
-- **Table does not exist**: Run `CREATE TABLE` command from Step 1
+- **Table does not exist**: Run `populate_postgres_db.py` script to create the table (see Step 1)
 - **Duplicate entries**: Check table schema, ensure timestamp uniqueness
 
 ### Submodule Updates
@@ -835,37 +832,6 @@ ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchm
   -e "benchmark_clients=['nethermind']"
 ```
 
-#### Example Workflow: Test New Features
-
-**Scenario**: Upstream `gas-benchmarks` repository added new BLS12-381 precompile tests in branch `feature-bls12`.
-
-**Workflow**:
-
-1. Update submodule to feature branch:
-   ```bash
-   make update-submodule BRANCH=feature-bls12
-   ```
-
-2. Verify new tests exist:
-   ```bash
-   ls gas-benchmarks/eest_tests/ | grep bls12
-   ```
-
-3. Run benchmarks with new tests:
-   ```bash
-   ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchmarks.yml \
-     -i inventory/hosts.yml \
-     -e "benchmark_clients=['nethermind','geth']" \
-     -e "benchmark_filter='bls12'"
-   ```
-
-4. Compare results with previous baseline (before update)
-
-5. (Optional) Switch back to stable main branch:
-   ```bash
-   make update-submodule BRANCH=main
-   ```
-
 #### Upstream Repository Reference
 
 **Repository**: [https://github.com/NethermindEth/gas-benchmarks](https://github.com/NethermindEth/gas-benchmarks)
@@ -884,7 +850,7 @@ ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchm
 
 **This Documentation Covers**: Orchestration, playbook execution, and result interpretation. For test development, consult the upstream repository.
 
-### Four-Phase Execution Model
+### Five-Phase Execution Model
 
 **Purpose**: Understanding the execution phases helps you debug issues and understand where failures occur.
 
@@ -919,7 +885,7 @@ ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchm
 - Check Docker Compose version >= 2.0
 - Check Python version >= 3.10
 - Check jq version >= 1.6
-- Verify required scripts exist (`src/run.sh`, `src/setup_node.py`)
+- Verify required scripts exist (`gas-benchmarks/run.sh`, `gas-benchmarks/setup_node.py`)
 
 **Failure**: Stops playbook with clear error message about missing dependencies.
 
@@ -941,8 +907,8 @@ fatal: [localhost]: FAILED! => {
 2. Wait for client RPC endpoint to become ready
 3. Run warmup tests (if `benchmark_warmup_file` configured)
 4. Execute benchmark tests (filtered if `benchmark_filter` specified)
-5. Collect results to `results/` directory (CSV/HTML)
-6. Collect logs to `logs/` directory
+5. Collect results to `results/` / `gas-benchmarks/results` directory (CSV/HTML)
+6. Collect logs to `logs/` / `gas-benchmarks/logs` directory
 7. Stop and remove client container
 
 **Sequential Execution**: Clients run one at a time. Example:
@@ -1205,7 +1171,7 @@ Shows 5 lines of context before and after error messages.
 **Common Error Categories**:
 
 1. **Docker Errors**: Container failed to start
-   - Check image availability: `docker pull nethermind/nethermind:latest`
+   - Check image availability: `docker pull ethpandaops/nethermind:performance`
    - Check port conflicts: `docker ps`, `netstat -an | grep 8545`
    - Check resource limits: `docker info`
 
@@ -1421,7 +1387,7 @@ fatal: [localhost]: FAILED! => {
 
 1. **Check Image Availability**:
    ```bash
-   docker pull nethermind/nethermind:latest
+   docker pull ethpandaops/nethermind:performance
    ```
 
 2. **Check Port Conflicts**:
@@ -1625,14 +1591,14 @@ make clean
 |-----------|------|---------|
 | `benchmark_clients` | List | `['nethermind','geth']` |
 | `benchmark_filter` | String | `'bn128'` |
-| `benchmark_images` | Dict | `{'nethermind': 'nethermind/nethermind:1.25.0'}` |
+| `benchmark_images` | Dict | `{'nethermind': 'ethpandaops/nethermind:1.25.0'}` |
 | `postgres_host` | String | `'db.example.com'` |
 
 **Result Locations**:
 
-- **CSV**: `results/{client}_{timestamp}.csv`
-- **HTML**: `results/{client}_{timestamp}.html`
-- **Logs**: `logs/{client}_{timestamp}.log`
+- **CSV**: `gas-benchmarks/reports/output_{client}.csv`
+- **HTML**: `gas-benchmarks/reports/index.html`
+- **Logs**: `gas-benchmarks/logs/{client}_{timestamp}.log`
 
 ---
 
@@ -1665,17 +1631,9 @@ make clean
 
 **A**: The playbook continues testing remaining clients and reports the failure in the execution summary. Results from successful clients are still available.
 
-### Q: How do I compare results across clients?
-
-**A**: Open CSV files side-by-side and compare `gas_consumed` for the same `test_name`, or use PostgreSQL + Grafana for visualization.
-
 ### Q: Can I add my own custom tests?
 
 **A**: Yes. Add tests to a custom directory, update `benchmark_test_paths` in `group_vars/all.yml`, and run benchmarks. For adding tests to the upstream repository, see [Contributing](#contributing).
-
-### Q: What if Docker daemon is not running?
-
-**A**: Start Docker Desktop (macOS) or `sudo systemctl start docker` (Linux). Verify with `docker ps`.
 
 ### Q: How do I clean up old results and logs?
 
