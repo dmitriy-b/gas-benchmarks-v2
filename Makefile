@@ -85,11 +85,11 @@ prepare_tools:
 	@docker compose version >/dev/null 2>&1 || (echo "Error: Docker Compose not found" && exit 1)
 	@echo "==> Checking jq..."
 	@command -v jq >/dev/null || (echo "Error: jq not found. Install with: brew install jq (macOS) or apt install jq (Linux)" && exit 1)
-	@echo "==> Installing Python dependencies from src/requirements.txt..."
-	@if [ -f src/requirements.txt ]; then \
-		$(PYTHON) -m pip install -r src/requirements.txt; \
+	@echo "==> Installing Python dependencies from gas-benchmarks/requirements.txt..."
+	@if [ -f gas-benchmarks/requirements.txt ]; then \
+		$(UV) pip install -r gas-benchmarks/requirements.txt; \
 	else \
-		echo "Warning: src/requirements.txt not found. Skipping Python deps."; \
+		echo "Warning: gas-benchmarks/requirements.txt not found. Skipping Python deps."; \
 	fi
 	@echo "✓ All tools prepared!"
 
