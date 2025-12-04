@@ -2,6 +2,18 @@
 # Role: benchmark_runner
 # Description: Executes gas benchmarks for a single client using run.sh script
 
+- name: Log benchmark execution phase
+  ansible.builtin.debug:
+    msg: "========== Benchmark Execution Phase: {{ client_name }} =========="
+
+- name: Clean up stale genesis files from /tmp
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /tmp/chainspec.json
+  failed_when: false
+
 - name: Execute benchmark for {{ client_name }}
   block:
     - name: Extract test path from first test (simplified for single path)
@@ -25,12 +37,22 @@
           {{ '-F' if benchmark_skip_forkchoice | default(false) else '' }}
           {{ '-o ' + benchmark_opcodes_warmup_count | string if (benchmark_opcodes_warmup_count is defined and benchmark_opcodes_warmup_count > 0) else '' }}
 
-    - name: Display run command
+    - name: Log benchmark command construction
       ansible.builtin.debug:
-        msg: "Executing: {{ run_command }}"
+        msg: "Benchmark command for {{ client_name }}: {{ run_command }}"
+
+    - name: Log benchmark execution start
+      ansible.builtin.debug:
+        msg: "Starting benchmark execution for {{ client_name }}..."
 
     - name: Execute benchmark run
-      ansible.builtin.shell: "{{ run_command }}"
+      ansible.builtin.shell: |
+        # Activate virtualenv if it exists
+        if [ -d .venv ]; then
+          source .venv/bin/activate
+        fi
+        # Run benchmark with timeout
+        timeout 7200 {{ run_command }}
       args:
         chdir: "{{ workspace_root }}/{{ benchmark_source_dir }}"
         executable: /bin/bash
@@ -39,6 +61,12 @@
         PYTHONPATH: "{{ workspace_root }}/{{ benchmark_source_dir }}"
       register: run_result
       changed_when: true
+      async: 7200
+      poll: 30
+
+    - name: Log benchmark execution end
+      ansible.builtin.debug:
+        msg: "Benchmark execution completed for {{ client_name }} with exit code {{ run_result.rc }}"
 
     - name: Check if benchmark succeeded
       ansible.builtin.assert:
@@ -97,3 +125,61 @@
       register: log_collection_result
       changed_when: "'Logs collected' in log_collection_result.stdout"
       failed_when: false
+
+    - name: Check reports directory for generated artifacts
+      ansible.builtin.find:
+        paths: "{{ workspace_root }}/{{ benchmark_source_dir }}/reports"
+        file_type: file
+      register: reports_files
+      failed_when: false
+
+    - name: Fail if no reports were generated
+      ansible.builtin.fail:
+        msg: "Benchmark validation failed: reports directory is empty or missing (expected HTML reports in gas-benchmarks/reports/)"
+      when: (reports_files.matched | default(0)) == 0
+
+    - name: Log validation success
+      ansible.builtin.debug:
+        msg: "Benchmark validation passed: {{ reports_files.matched }} report files generated"
+      when: reports_files.matched > 0
+
+    - name: Copy results artifacts from gas-benchmarks to top-level
+      ansible.builtin.synchronize:
+        src: "{{ workspace_root }}/{{ benchmark_source_dir }}/results/"
+        dest: "{{ workspace_root }}/results/"
+        mode: push
+        delete: no
+        recursive: yes
+      delegate_to: "{{ inventory_hostname }}"
+      register: results_sync_result
+      failed_when: false
+
+    - name: Copy reports artifacts from gas-benchmarks to top-level
+      ansible.builtin.synchronize:
+        src: "{{ workspace_root }}/{{ benchmark_source_dir }}/reports/"
+        dest: "{{ workspace_root }}/reports/"
+        mode: push
+        delete: no
+        recursive: yes
+      delegate_to: "{{ inventory_hostname }}"
+      register: reports_sync_result
+      failed_when: false
+
+    - name: Copy logs artifacts from gas-benchmarks to top-level
+      ansible.builtin.synchronize:
+        src: "{{ workspace_root }}/{{ benchmark_source_dir }}/logs/"
+        dest: "{{ workspace_root }}/logs/"
+        mode: push
+        delete: no
+        recursive: yes
+      delegate_to: "{{ inventory_hostname }}"
+      register: logs_sync_result
+      failed_when: false
+
+    - name: Log artifact collection summary
+      ansible.builtin.debug:
+        msg: |
+          Artifact collection completed:
+          - Results: {{ 'copied' if results_sync_result.changed else 'no changes' }}
+          - Reports: {{ 'copied' if reports_sync_result.changed else 'no changes' }}
+          - Logs: {{ 'copied' if logs_sync_result.changed else 'no changes' }}

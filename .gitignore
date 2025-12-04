@@ -63,3 +63,5 @@ src/nethermind/*
 src/execution-data/*
 *.log
 */execution-data/*
+group_vars/secrets.yml
+.env

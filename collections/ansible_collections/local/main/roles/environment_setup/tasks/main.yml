@@ -2,6 +2,37 @@
 # Role: environment_setup
 # Description: Prepares environment for benchmark execution (directories, lock file, cleanup)
 
+- name: Log environment setup phase
+  ansible.builtin.debug:
+    msg: "========== Environment Setup Phase =========="
+
+- name: Ensure workspace root directory exists
+  ansible.builtin.file:
+    path: "{{ workspace_root }}"
+    state: directory
+    mode: '0755'
+
+- name: Check if gas-benchmarks directory exists
+  ansible.builtin.stat:
+    path: "{{ workspace_root }}/{{ benchmark_source_dir }}"
+  register: gas_benchmarks_stat
+
+- name: Clone gas-benchmarks repository if not present
+  ansible.builtin.git:
+    repo: "https://github.com/NethermindEth/gas-benchmarks.git"
+    dest: "{{ workspace_root }}/{{ benchmark_source_dir }}"
+    version: main
+    update: yes
+  when: not gas_benchmarks_stat.stat.exists
+
+- name: Update gas-benchmarks repository if already present
+  ansible.builtin.git:
+    repo: "https://github.com/NethermindEth/gas-benchmarks.git"
+    dest: "{{ workspace_root }}/{{ benchmark_source_dir }}"
+    version: main
+    update: yes
+  when: gas_benchmarks_stat.stat.exists
+
 - name: Check for existing lock file
   ansible.builtin.stat:
     path: "{{ benchmark_lock_file }}"
@@ -71,6 +102,11 @@
     - "{{ benchmark_results_dir }}"
     - "{{ benchmark_preparation_results_dir }}"
 
+- name: Clean gas-benchmarks reports directory before execution
+  ansible.builtin.file:
+    path: "{{ workspace_root }}/{{ benchmark_source_dir }}/reports"
+    state: absent
+
 - name: Create required directories
   ansible.builtin.file:
     path: "{{ workspace_root }}/{{ item }}"
@@ -79,6 +115,7 @@
   loop:
     - "{{ benchmark_results_dir }}"
     - "{{ benchmark_warmup_results_dir }}"
+    - "{{ benchmark_reports_dir }}"
     - "{{ benchmark_logs_dir }}"
     - "{{ benchmark_preparation_results_dir }}"
 

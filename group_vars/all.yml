@@ -32,11 +32,16 @@ benchmark_images: {}  # Empty dict means use defaults from images.yaml
 
 # Results configuration
 benchmark_results_dir: "results"
+benchmark_reports_dir: "reports"
 
 # PostgreSQL configuration (optional, used with --tags postgres)
-postgres_host: "{{ lookup('env', 'DB_HOST') | default('') }}"
-postgres_user: "{{ lookup('env', 'DB_USER') | default('') }}"
-postgres_password: "{{ lookup('env', 'DB_PASSWORD') | default('') }}"
-postgres_table: "gas_limit_benchmarks"
+# These can be set via:
+#   1. Environment variables (DB_HOST, DB_USER, DB_PASSWORD)
+#   2. Extra vars file: -e "@group_vars/secrets.yml" with DB_HOST, DB_USER, DB_PASSWORD
+#   3. Direct extra vars: -e "postgres_host=..."
+postgres_host: "{{ DB_HOST | default(lookup('env', 'DB_HOST')) | default('') }}"
+postgres_user: "{{ DB_USER | default(lookup('env', 'DB_USER')) | default('') }}"
+postgres_password: "{{ DB_PASSWORD | default(lookup('env', 'DB_PASSWORD')) | default('') }}"
+postgres_table: "gas_limit_experiments"
 postgres_database: "monitoring"
 postgres_port: 5432

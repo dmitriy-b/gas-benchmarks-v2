@@ -11,6 +11,7 @@ min_docker_version: "20.10"
 min_docker_compose_version: "2.0"
 min_python_version: "3.10"
 min_jq_version: "1.6"
+min_dotnet_version: "9.0"
 
 # Paths to validate
 required_scripts:

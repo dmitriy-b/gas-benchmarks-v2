@@ -1,16 +1,22 @@
 ---
 - name: Ansible Benchmark Orchestration
-  hosts: localhost
+  hosts: all
   gather_facts: yes
-
-  vars_files:
-    - "{{ workspace_root }}/group_vars/all.yml"
 
   vars:
     client_failures: []
     playbook_start_time: "{{ ansible_date_time.epoch }}"
-    # Compute workspace root from playbook directory (5 levels up from playbooks/)
-    workspace_root: "{{ playbook_dir }}/../../../../.."
+    # Local project root (always on controller, for loading config files)
+    project_root: "{{ playbook_dir }}/../../../../.."
+
+  vars_files:
+    - "{{ project_root }}/group_vars/all.yml"
+
+  pre_tasks:
+    - name: Set workspace root (use inventory value or compute from playbook dir)
+      ansible.builtin.set_fact:
+        workspace_root: "{{ workspace_root | default(project_root) }}"
+      tags: ['always']
 
   tasks:
     - name: Record playbook start time
@@ -19,13 +25,13 @@
       tags: ['always']
     # Phase 1: Environment Setup
     - name: Environment setup
-      ansible.builtin.include_role:
+      ansible.builtin.import_role:
         name: environment_setup
       tags: ['always']
 
     # Phase 2: Validation
     - name: Validate prerequisites
-      ansible.builtin.include_role:
+      ansible.builtin.import_role:
         name: benchmark_validator
       tags: ['always']
 
