@@ -75,25 +75,6 @@
         execution_duration: "{{ (ansible_date_time.epoch | int) - (playbook_start_time | int) }}"
       tags: ['always']
 
-    - name: Report execution summary with timing
-      ansible.builtin.debug:
-        msg: |
-          ========================================
-          BENCHMARK EXECUTION SUMMARY
-          ========================================
-          Total clients: {{ benchmark_clients | length }}
-          Successful clients: {{ benchmark_clients | length - client_failures | length }}
-          Failed clients: {{ client_failures | length }}
-          {% if client_failures | length > 0 %}
-          Failed: {{ client_failures | join(', ') }}
-          {% endif %}
-
-          Execution Duration: {{ execution_duration | int // 60 }} minutes {{ execution_duration | int % 60 }} seconds
-          Start Time: {{ '%Y-%m-%d %H:%M:%S' | strftime(playbook_start_time | int) }}
-          End Time: {{ '%Y-%m-%d %H:%M:%S' | strftime(playbook_end_time | int) }}
-          ========================================
-      tags: ['always']
-
     - name: Cleanup tasks (always run)
       block:
         - name: Remove lock file
