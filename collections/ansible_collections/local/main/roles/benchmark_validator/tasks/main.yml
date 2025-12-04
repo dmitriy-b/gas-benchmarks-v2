@@ -2,6 +2,10 @@
 # Role: benchmark_validator
 # Description: Validates prerequisites and configuration before benchmark execution
 
+- name: Log prerequisite validation phase
+  ansible.builtin.debug:
+    msg: "========== Prerequisite Validation Phase =========="
+
 - name: Validate Docker is installed
   ansible.builtin.command: docker --version
   register: docker_version_result
@@ -11,6 +15,10 @@
 - name: Parse Docker version
   ansible.builtin.set_fact:
     docker_version: "{{ docker_version_result.stdout | regex_search('([0-9]+\\.[0-9]+)', '\\1') | first }}"
+
+- name: Log Docker validation result
+  ansible.builtin.debug:
+    msg: "✓ Docker validated: {{ docker_version_result.stdout }}"
 
 - name: Fail if Docker version is too old
   ansible.builtin.fail:
@@ -53,6 +61,10 @@
   ansible.builtin.set_fact:
     python_version: "{{ python_version_result.stdout | regex_search('([0-9]+\\.[0-9]+)', '\\1') | first }}"
 
+- name: Log Python validation result
+  ansible.builtin.debug:
+    msg: "✓ Python validated: {{ python_version_result.stdout }}"
+
 - name: Fail if Python version is too old
   ansible.builtin.fail:
     msg: "Python 3.10+ not installed (found: {{ python_version }})"
@@ -64,10 +76,92 @@
   changed_when: false
   failed_when: jq_version_result.rc != 0
 
+- name: Log jq validation result
+  ansible.builtin.debug:
+    msg: "✓ jq validated: {{ jq_version_result.stdout }}"
+
 - name: Fail if jq is not installed
   ansible.builtin.fail:
     msg: "jq not installed (required for JSON processing)"
   when: jq_version_result.rc != 0
+
+- name: Check if dotnet is installed
+  ansible.builtin.command: dotnet --version
+  register: dotnet_version_result
+  changed_when: false
+  failed_when: false
+
+- name: Parse dotnet version
+  ansible.builtin.set_fact:
+    dotnet_version: "{{ dotnet_version_result.stdout | regex_search('([0-9]+\\.[0-9]+)', '\\1') | first }}"
+  when: dotnet_version_result.rc == 0
+
+- name: Determine if dotnet installation needed
+  ansible.builtin.set_fact:
+    dotnet_install_needed: "{{ (dotnet_version_result.rc != 0) or (dotnet_version is defined and dotnet_version is version(min_dotnet_version, '<')) }}"
+
+- name: Add Microsoft package repository key (Debian/Ubuntu)
+  ansible.builtin.shell: |
+    wget https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb -O packages-microsoft-prod.deb
+    dpkg -i packages-microsoft-prod.deb
+    rm packages-microsoft-prod.deb
+  args:
+    executable: /bin/bash
+  become: yes
+  when:
+    - dotnet_install_needed | bool
+    - ansible_os_family == "Debian"
+  register: microsoft_repo_result
+  changed_when: "'Setting up packages-microsoft-prod' in microsoft_repo_result.stdout"
+  failed_when: false
+
+- name: Update apt cache after adding Microsoft repository
+  ansible.builtin.apt:
+    update_cache: yes
+  become: yes
+  when:
+    - dotnet_install_needed | bool
+    - ansible_os_family == "Debian"
+    - microsoft_repo_result is changed
+
+- name: Install dotnet SDK 9.0 using dotnet-install script
+  ansible.builtin.shell: |
+    wget https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh
+    chmod +x /tmp/dotnet-install.sh
+    /tmp/dotnet-install.sh --channel 9.0 --install-dir /usr/share/dotnet
+    rm /tmp/dotnet-install.sh
+    # Force update symlink to point to newly installed dotnet 9
+    rm -f /usr/bin/dotnet
+    ln -s /usr/share/dotnet/dotnet /usr/bin/dotnet
+  args:
+    executable: /bin/bash
+  become: yes
+  when:
+    - dotnet_install_needed | bool
+  register: dotnet_install_result_script
+  changed_when: "'Already installed' not in dotnet_install_result_script.stdout"
+
+- name: Set dotnet install result
+  ansible.builtin.set_fact:
+    dotnet_install_result: "{{ dotnet_install_result_script }}"
+  when: dotnet_install_needed | bool
+
+- name: Verify dotnet installation succeeded
+  ansible.builtin.command: dotnet --version
+  register: dotnet_verify_result
+  changed_when: false
+  failed_when: dotnet_verify_result.rc != 0
+  when: dotnet_install_result_script is changed
+
+- name: Parse dotnet version after installation
+  ansible.builtin.set_fact:
+    dotnet_version: "{{ dotnet_verify_result.stdout | regex_search('([0-9]+\\.[0-9]+)', '\\1') | first }}"
+  when: dotnet_install_result_script is changed
+
+- name: Log dotnet validation result
+  ansible.builtin.debug:
+    msg: "✓ Dotnet validated: {{ dotnet_version }}"
+  when: dotnet_version is defined
 
 - name: Check available disk space
   ansible.builtin.shell: |
@@ -79,6 +173,10 @@
 - name: Convert disk space to GB
   ansible.builtin.set_fact:
     disk_space_gb: "{{ (disk_space_kb_result.stdout | int / 1024 / 1024) | round(1, 'floor') | int }}"
+
+- name: Log disk space check result
+  ansible.builtin.debug:
+    msg: "✓ Disk space validated: {{ disk_space_gb }}G available"
 
 - name: Warn if disk space is low
   ansible.builtin.debug:
@@ -213,28 +311,131 @@
   loop_control:
     label: "{{ item.item[0] }}/{{ item.item[1].genesis }}"
 
-- name: Install Python dependencies
-  ansible.builtin.pip:
-    requirements: "{{ workspace_root }}/{{ benchmark_source_dir }}/requirements.txt"
-    state: present
-    extra_args: --user
+- name: Check if uv is installed
+  ansible.builtin.command: uv --version
+  register: uv_version_result
+  changed_when: false
+  failed_when: false
+
+- name: Install uv if not present
+  ansible.builtin.shell: |
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+  environment:
+    SHELL: /bin/bash
+  when: uv_version_result.rc != 0
+  register: uv_installer_result
+
+- name: Log uv installation result
+  ansible.builtin.debug:
+    msg: "✓ UV package manager installed successfully"
+  when: uv_installer_result is changed
+
+- name: Install Python dependencies using uv
+  ansible.builtin.shell: |
+    # Try multiple possible uv locations
+    if command -v uv &> /dev/null; then
+      UV_CMD="uv"
+    elif [ -f "$HOME/.cargo/bin/uv" ]; then
+      UV_CMD="$HOME/.cargo/bin/uv"
+    elif [ -f "$HOME/.local/bin/uv" ]; then
+      UV_CMD="$HOME/.local/bin/uv"
+    else
+      export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
+      UV_CMD="uv"
+    fi
+    $UV_CMD venv
+    $UV_CMD pip install -r requirements.txt
+  args:
+    chdir: "{{ workspace_root }}/{{ benchmark_source_dir }}"
+    executable: /bin/bash
   register: pip_install_result
+  changed_when: "'Already satisfied' not in pip_install_result.stdout"
+
+- name: Log package installation result
+  ansible.builtin.debug:
+    msg: "✓ Python packages installed via UV {{ '(newly installed)' if pip_install_result.changed else '(already satisfied)' }}"
+
+- name: Check if git-lfs is installed
+  ansible.builtin.command: git lfs version
+  register: git_lfs_version_result
+  changed_when: false
+  failed_when: false
+
+- name: Install git-lfs (Debian/Ubuntu)
+  ansible.builtin.apt:
+    name: git-lfs
+    state: present
+    update_cache: yes
+  become: yes
+  when:
+    - git_lfs_version_result.rc != 0
+    - ansible_os_family == "Debian"
+  register: git_lfs_apt_result
+
+- name: Install git-lfs (RHEL/CentOS/Fedora)
+  ansible.builtin.yum:
+    name: git-lfs
+    state: present
+  become: yes
+  when:
+    - git_lfs_version_result.rc != 0
+    - ansible_os_family == "RedHat"
+  register: git_lfs_yum_result
+
+- name: Initialize git-lfs after installation
+  ansible.builtin.command: git lfs install
+  when: (git_lfs_apt_result is defined and git_lfs_apt_result is changed) or (git_lfs_yum_result is defined and git_lfs_yum_result is changed)
+  changed_when: true
+  register: git_lfs_init_result
+
+- name: Log git-lfs validation result
+  ansible.builtin.debug:
+    msg: "✓ Git LFS {{ 'installed' if (git_lfs_init_result is defined and git_lfs_init_result is changed) else 'validated' }}: {{ git_lfs_version_result.stdout | default('newly installed') }}"
 
 - name: Check if Makefile exists in source directory
   ansible.builtin.stat:
     path: "{{ workspace_root }}/{{ benchmark_source_dir }}/Makefile"
   register: makefile_stat
 
-- name: Prepare tools via Makefile (if exists and not submodule)
+- name: Check if Nethermind repo already cloned
+  ansible.builtin.stat:
+    path: "{{ workspace_root }}/{{ benchmark_source_dir }}/nethermind"
+  register: nethermind_repo_stat
+  when: makefile_stat.stat.exists
+
+- name: Notify about long-running tools preparation
+  ansible.builtin.debug:
+    msg:
+      - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      - "⏳ STARTING TOOLS PREPARATION (first run can take up to 10 minutes)"
+      - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      - "{{ '📦 Step 1/3: Cloning Nethermind repo (~1GB) - this takes the longest' if not (nethermind_repo_stat.stat.exists | default(false)) else '✓ Nethermind repo already exists, skipping clone' }}"
+      - "{{ '📦 Step 2/3: Pulling LFS files' if not (nethermind_repo_stat.stat.exists | default(false)) else '✓ LFS files already pulled' }}"
+      - "🔨 Step 3/3: Building Nethermind.Tools.Kute (dotnet restore + compile)"
+      - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      - "Please wait..."
+  when:
+    - makefile_stat.stat.exists
+    - dotnet_version is defined
+
+- name: Prepare tools via Makefile (requires dotnet)
   ansible.builtin.command:
     cmd: make prepare_tools
     chdir: "{{ workspace_root }}/{{ benchmark_source_dir }}"
   register: make_prepare_result
   changed_when: "'up to date' not in make_prepare_result.stdout"
-  failed_when: false  # Don't fail if Makefile has issues
+  failed_when: make_prepare_result.rc != 0
   when:
     - makefile_stat.stat.exists
-    - benchmark_source_dir != "gas-benchmarks"  # Skip for git submodule (builds Nethermind Kute, not needed)
+    - dotnet_version is defined
+
+- name: Show tools preparation summary
+  ansible.builtin.debug:
+    msg: "✓ Tools preparation completed {{ '(new build)' if make_prepare_result.changed else '(already up to date)' }}"
+  when:
+    - makefile_stat.stat.exists
+    - dotnet_version is defined
+    - make_prepare_result is defined
 
 - name: Register validation results
   ansible.builtin.set_fact:

@@ -5,6 +5,7 @@
 benchmark_lock_file: "/tmp/gas_benchmark.lock"
 benchmark_results_dir: "results"
 benchmark_warmup_results_dir: "warmupresults"
+benchmark_reports_dir: "reports"
 benchmark_logs_dir: "logs"
 benchmark_preparation_results_dir: "prepresults"
 benchmark_overlay_tmp_root: "overlay-runtime"

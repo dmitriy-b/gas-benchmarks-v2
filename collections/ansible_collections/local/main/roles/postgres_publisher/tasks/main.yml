@@ -23,33 +23,33 @@
         fail_msg: "PostgreSQL credentials required when --tags postgres is used. Provide via variables or environment: DB_HOST, DB_USER, DB_PASSWORD"
         success_msg: "PostgreSQL credentials validated"
 
-    - name: Check if results directory exists
+    - name: Check if reports directory exists
       ansible.builtin.stat:
-        path: "{{ workspace_root }}/{{ benchmark_results_dir }}"
-      register: results_dir_stat
+        path: "{{ workspace_root }}/{{ benchmark_reports_dir }}"
+      register: reports_dir_stat
 
-    - name: Skip ingestion if results directory does not exist
+    - name: Skip ingestion if reports directory does not exist
       ansible.builtin.debug:
-        msg: "Results directory {{ benchmark_results_dir }} does not exist. Skipping PostgreSQL ingestion."
-      when: not results_dir_stat.stat.exists
+        msg: "Reports directory {{ benchmark_reports_dir }} does not exist. Skipping PostgreSQL ingestion."
+      when: not reports_dir_stat.stat.exists
 
-    - name: Find CSV files in results directory
+    - name: Find CSV files in reports directory
       ansible.builtin.find:
-        paths: "{{ workspace_root }}/{{ benchmark_results_dir }}"
+        paths: "{{ workspace_root }}/{{ benchmark_reports_dir }}"
         patterns: "*.csv"
       register: csv_files
-      when: results_dir_stat.stat.exists
+      when: reports_dir_stat.stat.exists
 
     - name: Skip ingestion if no CSV files found
       ansible.builtin.debug:
-        msg: "No CSV files found in {{ benchmark_results_dir }}. Skipping PostgreSQL ingestion."
+        msg: "No CSV files found in {{ benchmark_reports_dir }}. Skipping PostgreSQL ingestion."
       when:
-        - results_dir_stat.stat.exists
+        - reports_dir_stat.stat.exists
         - csv_files.matched == 0
 
     - name: Proceed with PostgreSQL ingestion
       when:
-        - results_dir_stat.stat.exists
+        - reports_dir_stat.stat.exists
         - csv_files.matched > 0
       block:
         - name: Test PostgreSQL connection
@@ -95,7 +95,7 @@
               --db-name "{{ postgres_database }}" \
               --table-name "{{ postgres_table }}" \
               --db-password "{{ postgres_password }}" \
-              --reports-dir "{{ benchmark_results_dir }}"
+              --reports-dir "{{ benchmark_reports_dir }}"
           args:
             chdir: "{{ workspace_root }}"
             executable: /bin/bash

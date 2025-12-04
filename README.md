@@ -92,7 +92,7 @@ brew install python@3.10 jq make git uv
 sudo apt update
 
 # Install Docker
-sudo apt install -y docker.io docker-compose-v2
+sudo apt install -y docker.io docker-compose
 
 # Start and enable Docker daemon
 sudo systemctl start docker
@@ -734,10 +734,10 @@ postgres_table: "gas_limit_benchmarks"
 ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchmarks.yml \
   -i inventory/hosts.yml \
   -e "benchmark_clients=['nethermind']" \
-  --tags postgres
+  --tags benchmarks,postgres
 ```
 
-**Important**: The `--tags postgres` flag enables the PostgreSQL ingestion phase (Phase 4).
+**Important**: The `--tags postgres` flag enables the PostgreSQL ingestion phase (Phase 4). But to run the benchmark before you should use the `--tags benchmarks` flag.
 
 **Without `--tags postgres`**: Benchmarks run normally, but metrics are not published to PostgreSQL.
 
@@ -1560,17 +1560,11 @@ ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchm
   -e "benchmark_clients=['nethermind','geth','reth']" \
   -e "benchmark_filter='bn128'"
 
-# Multiple runs for averaging
-ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchmarks.yml \
-  -i inventory/hosts.yml \
-  -e "benchmark_clients=['nethermind']" \
-  -e "benchmark_runs=5"
-
 # With PostgreSQL ingestion
 ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchmarks.yml \
   -i inventory/hosts.yml \
   -e "benchmark_clients=['nethermind']" \
-  --tags postgres
+  --tags benchmarks,postgres
 
 # Verbose debugging
 ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchmarks.yml \
