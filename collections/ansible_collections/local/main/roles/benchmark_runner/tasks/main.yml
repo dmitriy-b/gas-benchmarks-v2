@@ -182,6 +182,7 @@
           status: "failed"
           error_message: "{{ ansible_failed_result.msg | default('Unknown error') }}"
           return_code: "{{ run_result.rc | default(-1) }}"
+
           stderr: "{{ run_result.stderr | default('') }}"
 
     - name: Mark this client as failed

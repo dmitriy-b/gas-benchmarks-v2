@@ -343,34 +343,42 @@
     - benchmark_warmup_file != ""
     - not warmup_file_stat.stat.exists
 
-- name: Normalize benchmark_clients to ensure it's a list  
+- name: Normalize benchmark_clients to ensure it's a list
   block:
     - name: Convert Python list string to JSON and parse
       ansible.builtin.set_fact:
         benchmark_clients_normalized: "{{ benchmark_clients | replace(\"'\", '\"') | from_json }}"
       when: benchmark_clients is string
-    
+
     - name: Use benchmark_clients as-is if it's already a list
       ansible.builtin.set_fact:
         benchmark_clients_normalized: "{{ benchmark_clients }}"
       when: benchmark_clients is not string
 
+# Genesis file validation
+# Note: run.sh uses client-specific genesis for besu/nethermind, but falls back to geth for all others
+# (reth, erigon, geth, nimbus, ethrex all use geth's genesis format)
+- name: Determine genesis file path for each client
+  ansible.builtin.set_fact:
+    genesis_client_map: "{{ genesis_client_map | default({}) | combine({item: ('geth' if item not in ['besu', 'nethermind'] else item)}) }}"
+  loop: "{{ benchmark_clients_normalized }}"
+
 - name: Validate genesis files exist for each client
   ansible.builtin.stat:
-    path: "{{ workspace_root }}/{{ benchmark_source_dir }}/scripts/genesisfiles/{{ item[0] }}/{{ item[1].genesis }}"
+    path: "{{ workspace_root }}/{{ benchmark_source_dir }}/scripts/genesisfiles/{{ genesis_client_map[item[0]] }}/{{ item[1].genesis }}"
   register: genesis_file_stats
   loop: "{{ benchmark_clients_normalized | product(benchmark_test_paths | selectattr('genesis', 'defined') | list) | list }}"
   loop_control:
-    label: "{{ item[0] }}/{{ item[1].genesis }}"
+    label: "{{ item[0] }} -> {{ genesis_client_map[item[0]] }}/{{ item[1].genesis }}"
   when: item[1].genesis is defined
 
 - name: Fail if genesis file not found
   ansible.builtin.fail:
-    msg: "Genesis file not found: {{ item.item[1].genesis }} for client {{ item.item[0] }}"
+    msg: "Genesis file not found: {{ genesis_client_map[item.item[0]] }}/{{ item.item[1].genesis }} (for client {{ item.item[0] }})"
   when: not item.stat.exists
   loop: "{{ genesis_file_stats.results }}"
   loop_control:
-    label: "{{ item.item[0] }}/{{ item.item[1].genesis }}"
+    label: "{{ item.item[0] }} -> {{ genesis_client_map[item.item[0]] }}/{{ item.item[1].genesis }}"
 
 - name: Check if uv is installed
   ansible.builtin.command: uv --version
