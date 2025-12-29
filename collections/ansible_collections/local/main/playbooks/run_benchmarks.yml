@@ -5,14 +5,15 @@
 
   vars:
     client_failures: []
-    playbook_start_time: "{{ ansible_date_time.epoch }}"
+    # Note: playbook_start_time is set in first task using lookup('pipe') to avoid cached facts
     local_artifacts_dir: "{{ playbook_dir }}/../../../../../"
 
   tasks:
     - name: Record playbook start time and run timestamp
       ansible.builtin.set_fact:
-        playbook_start_time: "{{ ansible_date_time.epoch }}"
-        benchmark_run_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+        # Use lookup('pipe') to get CURRENT time, not cached ansible_date_time
+        playbook_start_time: "{{ lookup('pipe', 'date +%s') }}"
+        benchmark_run_timestamp: "{{ lookup('pipe', 'date +%Y%m%dT%H%M%S') }}"
       tags: ['always']
 
     - name: Log run timestamp
@@ -116,8 +117,8 @@
     # Phase 5: Cleanup and Final Status
     - name: Calculate execution time
       ansible.builtin.set_fact:
-        playbook_end_time: "{{ ansible_date_time.epoch }}"
-        execution_duration: "{{ (ansible_date_time.epoch | int) - (playbook_start_time | int) }}"
+        playbook_end_time: "{{ lookup('pipe', 'date +%s') }}"
+        execution_duration: "{{ (lookup('pipe', 'date +%s') | int) - (playbook_start_time | int) }}"
       tags: ['always']
 
     - name: Cleanup tasks (always run)

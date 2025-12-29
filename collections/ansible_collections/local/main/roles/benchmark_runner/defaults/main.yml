@@ -42,8 +42,8 @@ benchmark_jwt_path: "/tmp/jwtsecret"
 benchmark_results_dir: "results"
 benchmark_logs_dir: "logs"
 
-# Run timestamp for log directory (passed from playbook, fallback to epoch)
-benchmark_run_timestamp: "{{ ansible_date_time.iso8601_basic_short | default(ansible_date_time.epoch) }}"
+# Run timestamp for log directory (passed from playbook, fallback uses pipe lookup for current time)
+benchmark_run_timestamp: "{{ lookup('pipe', 'date +%Y%m%dT%H%M%S') }}"
 # Note: warmup and preparation dirs are used by run.sh, not this role directly
 benchmark_warmup_results_dir: "warmupresults"
 benchmark_preparation_results_dir: "prepresults"

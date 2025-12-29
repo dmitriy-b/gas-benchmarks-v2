@@ -65,6 +65,7 @@ src/execution-data/*
 */execution-data/*
 group_vars/secrets.yml
 .env
+hosts/
 
 # AI files
 CHANGES.md

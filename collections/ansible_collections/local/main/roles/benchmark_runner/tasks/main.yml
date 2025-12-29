@@ -8,8 +8,17 @@
 
 # =============================================================================
 # Pre-Execution Cleanup
-# Stops containers, removes volumes, cleans execution-data directory
+# Stops containers, removes volumes, cleans execution-data and results directories
 # =============================================================================
+- name: Clean results and reports from previous runs
+  ansible.builtin.file:
+    path: "{{ benchmark_workspace_root }}/{{ benchmark_source_dir }}/{{ item }}"
+    state: absent
+  loop:
+    - results
+    - reports
+  failed_when: false
+
 - name: Clean up previous execution state
   ansible.builtin.shell: |
     set -e
