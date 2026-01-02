@@ -16,6 +16,12 @@ all:
     # For running benchmarks on the local machine
     localhost:
       ansible_connection: local
+      # Host-specific overrides (optional)
+      # benchmark_clients:
+      #   - nethermind
+      # benchmark_filter: "bn128"
+      # benchmark_images:
+      #   nethermind: "nethermindeth/nethermind:latest"
 
     # -------------------------------------------------------------------------
     # Remote Server Example
@@ -39,7 +45,8 @@ all:
     # -------------------------------------------------------------------------
     # Workspace directory on target host where benchmarks will run
     # For remote hosts, this directory will be created if it doesn't exist
-    workspace_root: ~/benchmark/gas-benchmarks-v2
+    # Default uses /tmp which works on both macOS and Linux
+    workspace_root: /tmp/gas-benchmarks-v2
 
     # -------------------------------------------------------------------------
     # Optional Overrides
