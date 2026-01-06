@@ -1,0 +1,61 @@
+---
+# =============================================================================
+# Example Inventory Configuration
+# =============================================================================
+# Copy this file to hosts.yml and modify for your environment:
+#   cp inventory/hosts.yml.example inventory/hosts.yml
+#
+# The hosts.yml file is gitignored to prevent committing sensitive data.
+# =============================================================================
+
+all:
+  hosts:
+    # -------------------------------------------------------------------------
+    # Localhost Example
+    # -------------------------------------------------------------------------
+    # For running benchmarks on the local machine
+    localhost:
+      ansible_connection: local
+      # Host-specific overrides (optional)
+      # benchmark_clients:
+      #   - nethermind
+      # benchmark_filter: "bn128"
+      # benchmark_images:
+      #   nethermind: "nethermindeth/nethermind:latest"
+
+    # -------------------------------------------------------------------------
+    # Remote Server Example
+    # -------------------------------------------------------------------------
+    # Uncomment and modify for remote execution
+    # benchmark-server:
+    #   ansible_host: 192.168.1.100      # Server IP or hostname
+    #   ansible_user: benchmark          # SSH user
+    #   ansible_port: 22                 # SSH port (optional, default 22)
+    #   # ansible_ssh_private_key_file: ~/.ssh/benchmark_key  # SSH key (optional)
+    #
+    #   # Host-specific overrides (optional)
+    #   benchmark_clients:
+    #     - nethermind
+    #     - geth
+    #     - besu
+
+  vars:
+    # -------------------------------------------------------------------------
+    # Required Configuration
+    # -------------------------------------------------------------------------
+    # Workspace directory on target host where benchmarks will run
+    # For remote hosts, this directory will be created if it doesn't exist
+    # Default uses /tmp which works on both macOS and Linux
+    workspace_root: /tmp/gas-benchmarks-v2
+
+    # -------------------------------------------------------------------------
+    # Optional Overrides
+    # -------------------------------------------------------------------------
+    # Override any default from group_vars/all.yml here
+    # These apply to all hosts in this inventory
+
+    # Example: Run more iterations for production benchmarks
+    # benchmark_runs: 5
+
+    # Example: Filter to specific tests
+    # benchmark_filter: "bn128"

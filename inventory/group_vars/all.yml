@@ -1,0 +1,120 @@
+---
+# =============================================================================
+# Gas Benchmarks V2 - Default Configuration
+# =============================================================================
+# This file contains default values for all hosts.
+# Override specific values in host_vars/<hostname>.yml or via CLI -e flags.
+#
+# Priority: CLI (-e) > host_vars > group_vars > role defaults
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Path Configuration
+# -----------------------------------------------------------------------------
+# Source directory containing benchmark scripts (run.sh, setup_node.py, etc.)
+benchmark_source_dir: "gas-benchmarks"
+
+# Test artifacts directory (usually same as source)
+benchmark_tests_root: "gas-benchmarks"
+
+# -----------------------------------------------------------------------------
+# Benchmark Configuration
+# -----------------------------------------------------------------------------
+# Clients to benchmark (override in host_vars or via -e for different hosts)
+benchmark_clients:
+  - nethermind
+  - geth
+  - reth
+
+# Test paths with genesis files
+# Each entry needs 'path' and optionally 'genesis'
+benchmark_test_paths:
+  - path: "{{ benchmark_tests_root }}/eest_tests"
+    genesis: "zkevmgenesis.json"
+
+# Number of benchmark iterations per test
+benchmark_runs: 1
+
+# Test name filter pattern (empty = all tests)
+# Example: "bn128" to run only BN128 precompile tests
+benchmark_filter: ""
+
+# Warmup file path (empty = no warmup)
+benchmark_warmup_file: ""
+
+# Number of opcode warmup iterations before measured run
+benchmark_opcodes_warmup_count: 1
+
+# Restart client container before each test
+benchmark_restart_before_testing: false
+
+# Skip forkchoice updates during testing
+benchmark_skip_forkchoice: false
+
+# -----------------------------------------------------------------------------
+# Docker Image Configuration
+# -----------------------------------------------------------------------------
+# "default" = use image from gas-benchmarks/images.yaml
+# Override with specific image URI: "ethpandaops/nethermind:1.25.0"
+benchmark_images:
+  nethermind: "default"
+  geth: "default"
+  reth: "default"
+  erigon: "default"
+  besu: "default"
+  nimbus: "default"
+  ethrex: "default"
+
+# -----------------------------------------------------------------------------
+# Network and Snapshot Configuration (Advanced)
+# -----------------------------------------------------------------------------
+# Network name for stateful tests (empty = use genesis file)
+benchmark_network: ""
+
+# Snapshot root for overlay testing (empty = disabled)
+benchmark_snapshot_root: ""
+
+# -----------------------------------------------------------------------------
+# Output Directories
+# -----------------------------------------------------------------------------
+# Results are stored in timestamped subdirectories
+benchmark_results_dir: "results"
+benchmark_reports_dir: "reports"
+benchmark_logs_dir: "logs"
+
+# JWT secret path (used by run.sh)
+benchmark_jwt_path: "/tmp/jwtsecret"
+
+# Local directory to fetch results from remote hosts
+# Defaults to project root
+local_artifacts_dir: "{{ inventory_dir | dirname }}"
+
+# -----------------------------------------------------------------------------
+# PostgreSQL Configuration (Optional)
+# -----------------------------------------------------------------------------
+# Used when running with --tags postgres
+# Set credentials via environment variables or -e flags (never commit secrets!)
+#
+# Environment variables: DB_HOST, DB_USER, DB_PASSWORD
+# CLI: -e "postgres_host=..." -e "postgres_user=..." -e "postgres_password=..."
+# Secrets file: -e "@group_vars/secrets.yml"
+
+postgres_host: "{{ lookup('env', 'DB_HOST') | default('') }}"
+postgres_user: "{{ lookup('env', 'DB_USER') | default('') }}"
+postgres_password: "{{ lookup('env', 'DB_PASSWORD') | default('') }}"
+postgres_database: "monitoring"
+postgres_table: "gas_limit_experiments"
+postgres_port: 5432
+
+# -----------------------------------------------------------------------------
+# Environment Setup Configuration
+# -----------------------------------------------------------------------------
+# Git repository for gas-benchmarks submodule
+benchmark_source_repo: "https://github.com/NethermindEth/gas-benchmarks.git"
+benchmark_source_branch: "main"
+
+# Minimum dotnet SDK version required
+min_dotnet_version: "9.0"
+
+# Lock file to prevent concurrent executions
+benchmark_lock_file: "/tmp/gas_benchmark.lock"
