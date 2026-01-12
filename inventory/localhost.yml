@@ -7,3 +7,4 @@ all:
   vars:
     # Directory on remote host for benchmark execution. PWD may not work with WSL
     workspace_root: "{{ lookup('env', 'PWD') }}"
+    use_root: "{{ ansible_os_family != 'Darwin' }}"

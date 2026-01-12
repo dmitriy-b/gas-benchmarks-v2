@@ -11,13 +11,13 @@
     path: "{{ benchmark_workspace_root }}"
     state: directory
     mode: '0755'
-  become: yes
+  become: "{{ use_root }}"
 
 - name: Install rsync (required for artifact synchronization)
   ansible.builtin.package:
     name: rsync
     state: present
-  become: yes
+  become: "{{ use_root }}"
 
 - name: Clone or update gas-benchmarks repository
   ansible.builtin.git:
@@ -31,14 +31,14 @@
     name: git-lfs
     state: present
     update_cache: yes
-  become: yes
+  become: "{{ use_root }}"
   when: ansible_os_family == "Debian"
 
 - name: Install git-lfs package (RedHat/CentOS)
   ansible.builtin.yum:
     name: git-lfs
     state: present
-  become: yes
+  become: "{{ use_root }}"
   when: ansible_os_family == "RedHat"
 
 - name: Install git-lfs package (macOS)
@@ -74,7 +74,7 @@
     chmod +x /usr/local/bin/yq
   args:
     executable: /bin/bash
-  become: yes
+  become: "{{ use_root }}"
   when:
     - yq_version_result.rc != 0
     - ansible_os_family == "Debian"
@@ -86,7 +86,7 @@
     chmod +x /usr/local/bin/yq
   args:
     executable: /bin/bash
-  become: yes
+  become: "{{ use_root }}"
   when:
     - yq_version_result.rc != 0
     - ansible_os_family == "RedHat"
@@ -137,7 +137,7 @@
     rm -f "$TEMP_DEB"
   args:
     executable: /bin/bash
-  become: yes
+  become: "{{ use_root }}"
   when:
     - dotnet_install_needed | bool
     - ansible_distribution == "Ubuntu"
@@ -147,7 +147,7 @@
 - name: Update apt cache after adding Microsoft repository
   ansible.builtin.apt:
     update_cache: yes
-  become: yes
+  become: "{{ use_root }}"
   when:
     - dotnet_install_needed | bool
     - ansible_distribution == "Ubuntu"
@@ -171,7 +171,7 @@
     ln -s /usr/share/dotnet/dotnet /usr/bin/dotnet
   args:
     executable: /bin/bash
-  become: yes
+  become: "{{ use_root }}"
   when: dotnet_install_needed | bool
   register: dotnet_install_result
   changed_when: "'Already installed' not in dotnet_install_result.stdout"

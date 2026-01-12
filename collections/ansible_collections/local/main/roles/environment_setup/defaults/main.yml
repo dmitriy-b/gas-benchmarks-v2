@@ -20,3 +20,6 @@ benchmark_snapshot_root: ""
 
 # Minimum required versions for installed tools
 min_dotnet_version: "9.0"
+
+# Privilege escalation - can be overridden in inventory/group_vars/host_vars
+use_root: "{{ ansible_os_family != 'Darwin' }}"

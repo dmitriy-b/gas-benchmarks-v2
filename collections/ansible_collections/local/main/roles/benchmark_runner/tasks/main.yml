@@ -46,7 +46,7 @@
     fi
   args:
     executable: /bin/bash
-  become: yes
+  become: "{{ use_root }}"
   register: cleanup_result
   changed_when: "'cleaned' in cleanup_result.stdout"
   failed_when: false
@@ -60,7 +60,7 @@
   loop:
     - /tmp/chainspec.json
     - /tmp/genesis.json
-  become: yes
+  become: "{{ use_root }}"
   failed_when: false
 
 # Clean JWT secret path (prevents "cannot create regular file" errors if it exists as directory)
@@ -68,7 +68,7 @@
   ansible.builtin.file:
     path: "{{ benchmark_jwt_path }}"
     state: absent
-  become: yes
+  become: "{{ use_root }}"
   failed_when: false
 
 # =============================================================================
@@ -151,12 +151,11 @@
       environment:
         JWT_PATH: "{{ benchmark_jwt_path }}"
         PYTHONPATH: "{{ benchmark_workspace_root }}/{{ benchmark_source_dir }}"
-        PATH: "{{ benchmark_workspace_root }}/{{ benchmark_source_dir }}/.venv/bin:{{ ansible_env.PATH }}"
+        PATH: "{{ benchmark_workspace_root }}/{{ benchmark_source_dir }}/.venv/bin:{{ ansible_facts['env']['PATH'] }}"
       register: run_result
       changed_when: true
       async: 7200
       poll: 30
-
 
     - name: Verify benchmark succeeded
       ansible.builtin.assert:
@@ -249,7 +248,7 @@
       ansible.builtin.file:
         path: "{{ benchmark_workspace_root }}/{{ item }}/{{ benchmark_run_timestamp }}"
         state: directory
-        mode: '0755'
+        mode: "0755"
       loop:
         - results
         - reports
