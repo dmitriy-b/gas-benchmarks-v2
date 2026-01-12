@@ -108,7 +108,7 @@
     - name: Build and execute benchmark command
       ansible.builtin.shell: |
         # Activate virtualenv (created by environment_setup in the source dir)
-        VENV_PATH="{{ benchmark_workspace_root }}/{{ benchmark_source_dir }}/.venv"
+        VENV_PATH="{{ workspace_root }}/.venv"
         if [ -d "$VENV_PATH" ]; then
           source "$VENV_PATH/bin/activate"
           echo "Activated venv at $VENV_PATH"

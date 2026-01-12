@@ -5,19 +5,17 @@ Ansible-orchestrated gas benchmark suite for Ethereum execution clients.
 ## Quick Start
 
 ```bash
-# 1. Install dependencies
+# Install dependencies
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.local/bin/env
 make install
+make init-submodule
+make prepare_tools
 source .venv/bin/activate
 ansible-galaxy collection install -r requirements.yml
 
-# 2. Initialize test submodule
-make init-submodule
-
-# 3. Run a benchmark
-ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchmarks.yml \
-  -i inventory/hosts.yml \
-  -e "benchmark_clients=['nethermind']" \
-  -e "benchmark_filter='bn128'"
+# Run benchmarks
+ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchmarks.yml -i inventory/hosts.yml -e '{"benchmark_clients": ["nethermind"], "benchmark_filter": "bn128"}'
 ```
 
 ## Requirements
@@ -28,6 +26,8 @@ ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchm
 | Docker Compose | 2.0+ | Container orchestration |
 | Python | 3.10+ | Ansible and scripts |
 | jq | 1.6+ | JSON processing |
+| ansible | 2.10+ | Ansible |
+| uv | 0.8.9+ | Python package manager |
 
 ## Usage
 
@@ -35,26 +35,16 @@ ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchm
 
 ```bash
 # Single client
-ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchmarks.yml \
-  -i inventory/hosts.yml \
-  -e "benchmark_clients=['nethermind']"
+ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchmarks.yml -i inventory/hosts.yml -e '{"benchmark_clients": ["nethermind"]}'
 
 # Multiple clients
-ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchmarks.yml \
-  -i inventory/hosts.yml \
-  -e "benchmark_clients=['nethermind','geth','reth']"
+ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchmarks.yml -i inventory/hosts.yml -e '{"benchmark_clients": ["nethermind","geth","reth"]}'
 
 # With test filter
-ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchmarks.yml \
-  -i inventory/hosts.yml \
-  -e "benchmark_clients=['nethermind']" \
-  -e "benchmark_filter='bn128'"
+ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchmarks.yml -i inventory/hosts.yml -e '{"benchmark_clients": ["nethermind"], "benchmark_filter": "bn128"}'
 
 # Custom Docker image
-ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchmarks.yml \
-  -i inventory/hosts.yml \
-  -e "benchmark_clients=['nethermind']" \
-  -e "benchmark_images={'nethermind': 'ethpandaops/nethermind:1.25.0'}"
+ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchmarks.yml -i inventory/hosts.yml -e '{"benchmark_clients": ["nethermind"], "benchmark_images": {"nethermind": "ethpandaops/nethermind:1.25.0"}}'
 ```
 
 ### Remote Execution
@@ -101,10 +91,7 @@ export DB_USER=benchmark_user
 export DB_PASSWORD=secret
 
 # Run with PostgreSQL ingestion
-ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchmarks.yml \
-  -i inventory/hosts.yml \
-  -e "benchmark_clients=['nethermind']" \
-  --tags benchmarks,postgres
+ansible-playbook collections/ansible_collections/local/main/playbooks/run_benchmarks.yml -i inventory/hosts.yml -e '{"benchmark_clients": ["nethermind"]}' --tags benchmarks,postgres
 ```
 
 ## Results
