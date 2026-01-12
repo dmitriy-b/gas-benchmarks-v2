@@ -16,6 +16,7 @@
   vars:
     cleanup_results: true
     cleanup_docker: true
+    use_root: "{{ ansible_os_family != 'Darwin' }}"
 
   tasks:
     - name: Display cleanup targets
@@ -45,7 +46,7 @@
         - "{{ benchmark_jwt_path | default('/tmp/jwtsecret') }}"
         - /tmp/genesis.json
         - /tmp/chainspec.json
-      become: yes
+      become: "{{ use_root }}"
       failed_when: false
 
     # ==========================================================================
@@ -74,7 +75,7 @@
         fi
       args:
         executable: /bin/bash
-      become: yes
+      become: "{{ use_root }}"
       register: overlay_cleanup
       changed_when: "'Unmounting' in overlay_cleanup.stdout or 'Removed' in overlay_cleanup.stdout"
       failed_when: false
