@@ -52,9 +52,15 @@
 
     - name: Execute benchmark run
       ansible.builtin.shell: |
-        # Activate virtualenv if it exists
-        if [ -d .venv ]; then
-          source .venv/bin/activate
+        VENV_PATH="{{ workspace_root }}/.venv"
+        if [ -d "$VENV_PATH" ]; then
+          source "$VENV_PATH/bin/activate"
+          echo "Activated venv at $VENV_PATH"
+          echo "Python: $(which python3)"
+        else
+          echo "ERROR: venv not found at $VENV_PATH"
+          echo "Run the environment_setup role first or ensure 'setup' tag is included"
+          exit 1
         fi
         # Run benchmark with timeout
         timeout 7200 {{ run_command }}
