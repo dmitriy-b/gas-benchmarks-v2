@@ -47,3 +47,6 @@ benchmark_run_timestamp: "{{ lookup('pipe', 'date +%Y%m%dT%H%M%S') }}"
 # Note: warmup and preparation dirs are used by run.sh, not this role directly
 benchmark_warmup_results_dir: "warmupresults"
 benchmark_preparation_results_dir: "prepresults"
+
+# Privilege escalation - can be overridden in inventory/group_vars/host_vars
+use_root: "{{ ansible_os_family != 'Darwin' }}"
